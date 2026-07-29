@@ -5,9 +5,9 @@
     <string name="package_name">app.manimagic.rustore</string>
     <string name="custom_url_scheme">app.manimagic.rustore</string>
 
-    <!-- RuStore Pay SDK. Console App ID — из консоли RuStore после регистрации
-         приложения (Личный кабинет → приложение → идентификатор). ЗАПОЛНИТЬ. -->
-    <string name="rustore_console_app_id">REPLACE_WITH_RUSTORE_CONSOLE_APP_ID</string>
+    <!-- RuStore Pay SDK. Console App ID — из консоли RuStore, виден в адресе
+         страницы приложения: console.rustore.ru/apps/<ID>/versions -->
+    <string name="rustore_console_app_id">2063739048</string>
     <!-- Отдельная схема для колбэков платёжного SDK (переход из банковских приложений) -->
     <string name="rustore_pay_scheme">manimagicrustorepay</string>
 </resources>
