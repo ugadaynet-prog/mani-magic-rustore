@@ -1,0 +1,37 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+// buildscript{} выполняется Gradle ПЕРВЫМ всегда, вне зависимости от расположения в файле —
+// поэтому версию Kotlin тут пишем строкой напрямую, а не через ext из variables.gradle
+// (тот ещё не был бы применён на этот момент).
+buildscript {
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath 'com.google.gms:google-services:4.4.4'
+        // Kotlin — нужен для нативного плагина RuStore-биллинга (RuStoreBillingPlugin.kt)
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.21'
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+apply from: "variables.gradle"
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        // RuStore Pay SDK — платежи внутри приложения (обязателен для цифрового
+        // товара, продаваемого через RuStore; веб-оплата ЮKassa внутри стора запрещена).
+        maven { url = uri("https://artifactory-external.vkpartner.ru/artifactory/maven-rustore-exposed/") }
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

@@ -1,0 +1,65 @@
+name: Build signed AAB for RuStore
+
+# Собирает подписанный .aab для загрузки в консоль RuStore. Требует секреты
+# репозитория (Settings → Secrets and variables → Actions):
+#   ANDROID_KEYSTORE_BASE64   — из generate-keystore.yml (файл .keystore.base64)
+#   ANDROID_KEYSTORE_PASSWORD — из password.txt того же запуска
+#   ANDROID_KEY_PASSWORD      — тот же пароль (при генерации storepass = keypass)
+#   ANDROID_KEY_ALIAS         — "manimagic" (если не меняли в generate-keystore.yml)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'rustore-app/**'
+      - '../app/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rustore-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Синхронизировать веб-приложение и Capacitor
+        run: |
+          node sync-www.js
+          npx cap sync android
+
+      - name: Восстановить ключ подписи из секрета
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+
+      - name: Собрать подписанный .aab
+        working-directory: rustore-app/android
+        env:
+          ANDROID_KEYSTORE_PATH: app/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew bundleRelease
+
+      - name: Загрузить .aab как артефакт сборки
+        uses: actions/upload-artifact@v4
+        with:
+          name: mani-magic-rustore-aab
+          path: rustore-app/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30

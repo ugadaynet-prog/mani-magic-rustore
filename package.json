@@ -1,0 +1,11 @@
+{
+  "name": "mani-magic-rustore",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MANI Magic — нативная Android-обёртка (Capacitor) для публикации в RuStore с нативным биллингом RuStore Pay SDK.",
+  "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2"
+  }
+}
