@@ -39,6 +39,11 @@ class RuStoreBillingPlugin : Plugin() {
                 .addOnSuccessListener { result ->
                     val ret = JSObject()
                     ret.put("purchaseId", result.purchaseId.toString())
+                    // invoiceId — то, что реально нужно серверу для проверки через
+                    // Public API RuStore (GET /v2/invoices/{invoiceId}); purchaseId
+                    // передаём тоже, но только для наших логов/идемпотентности.
+                    ret.put("invoiceId", result.invoiceId.toString())
+                    ret.put("sandbox", result.sandbox)
                     ret.put("productId", productId)
                     call.resolve(ret)
                 }
