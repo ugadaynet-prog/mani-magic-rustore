@@ -48,8 +48,8 @@ jobs:
           java -jar pepk.jar \
             --keystore=app-signing.keystore \
             --alias=appsigning \
-            --storepass="${{ github.run_id }}SignPass!" \
-            --keypass="${{ github.run_id }}SignPass!" \
+            --keystore-pass="${{ github.run_id }}SignPass!" \
+            --key-pass="${{ github.run_id }}SignPass!" \
             --output=pepk_out.zip \
             --encryptionkey="${{ github.event.inputs.encryptionkey }}" \
             --include-cert
