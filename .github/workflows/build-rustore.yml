@@ -10,10 +10,7 @@ name: Build signed AAB for RuStore
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - 'rustore-app/**'
-      - '../app/**'
+    branches: [master]
 
 jobs:
   build:
@@ -22,7 +19,21 @@ jobs:
       run:
         working-directory: rustore-app
     steps:
-      - uses: actions/checkout@v4
+      # Этот репозиторий (mani-magic-rustore) сам по себе — обёртка. Веб-приложение
+      # (app/) живёт в ДРУГОМ репозитории (mani-magic, GitHub Pages). Раскладываем оба
+      # как соседние папки $GITHUB_WORKSPACE/rustore-app и $GITHUB_WORKSPACE/app —
+      # именно это ожидает sync-www.js (path.join(__dirname, '..', 'app')) и вся
+      # структура ниже (working-directory: rustore-app/...).
+      - name: Checkout rustore-app (этот репозиторий)
+        uses: actions/checkout@v4
+        with:
+          path: rustore-app
+
+      - name: Checkout app/ (источник правды для веб-контента, репозиторий mani-magic)
+        uses: actions/checkout@v4
+        with:
+          repository: ugadaynet-prog/mani-magic
+          path: app
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
