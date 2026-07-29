@@ -96,3 +96,4 @@ npx cap sync android   # синхронизировать с нативным п
 
 Собрать `.aab`/`.apk` локально без Android Studio нельзя — для этого и
 существует `build-rustore.yml`.
+
