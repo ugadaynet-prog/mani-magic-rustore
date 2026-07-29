@@ -1,0 +1,65 @@
+name: Generate RuStore app-signing key (run ONCE)
+
+# Разовый workflow: генерирует НОВУЮ пару ключей ("ключ подписи приложения" —
+# это RuStore будет использовать для подписи готовых APK, отдельно от ключа
+# загрузки, которым мы уже подписываем сам .aab перед отправкой), затем
+# шифрует приватный ключ через официальный инструмент Google PEPK специально
+# для RuStore (используя encryptionkey из окна "Загрузка подписи приложения"
+# в консоли RuStore — он свой для каждого приложения/аккаунта).
+#
+# Скачать результат и загрузить в RuStore ДВА файла:
+#  - pepk_out.zip (из этого workflow)
+#  - upload-cert.pem (сертификат ключа ЗАГРУЗКИ — уже подготовлен отдельно,
+#    извлечён из существующего mani-magic-rustore.keystore, это НЕ отсюда)
+
+on:
+  workflow_dispatch:
+    inputs:
+      encryptionkey:
+        description: 'encryptionkey из окна "Загрузка подписи приложения" в консоли RuStore'
+        required: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up JDK (даёт keytool и java для pepk.jar)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Сгенерировать новую пару ключей (app signing key)
+        run: |
+          keytool -genkey -v \
+            -keystore app-signing.keystore \
+            -alias appsigning \
+            -keyalg RSA -keysize 2048 -validity 36500 \
+            -storepass "${{ github.run_id }}SignPass!" \
+            -keypass "${{ github.run_id }}SignPass!" \
+            -dname "CN=MANI Magic, OU=ИП Икромова Е.И., O=MANI Magic, L=Moscow, ST=Moscow, C=RU"
+          echo "Пароль (сохраните вместе с файлом!): ${{ github.run_id }}SignPass!" > app-signing-password.txt
+
+      - name: Скачать официальный инструмент Google PEPK
+        run: curl -sSL -o pepk.jar "https://www.gstatic.com/play-apps-publisher-rapid/signing-tool/prod/pepk.jar"
+
+      - name: Зашифровать приватный ключ для RuStore (PEPK)
+        run: |
+          java -jar pepk.jar \
+            --keystore=app-signing.keystore \
+            --alias=appsigning \
+            --storepass="${{ github.run_id }}SignPass!" \
+            --keypass="${{ github.run_id }}SignPass!" \
+            --output=pepk_out.zip \
+            --encryptionkey="${{ github.event.inputs.encryptionkey }}" \
+            --include-cert
+
+      - name: Загрузить результат
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustore-app-signing-key
+          path: |
+            pepk_out.zip
+            app-signing.keystore
+            app-signing-password.txt
+          retention-days: 7
