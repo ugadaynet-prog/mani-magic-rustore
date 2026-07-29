@@ -1,0 +1,130 @@
+name: Screenshots for RuStore (run when needed)
+
+# Снимает скриншоты живого приложения (mani-magic.ru/app/) для карточки в RuStore.
+# Размер 1080x1920 (9:16, как требует консоль): вьюпорт 360x640 CSS-пикселей —
+# то есть настоящая мобильная вёрстка — умноженный на deviceScaleFactor 3.
+# Локально это не сделать: Chromium/Playwright в рабочей среде нет, а браузерная
+# панель не отдаёт файлы на диск. Здесь же файлы кладутся в артефакт сборки.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Адрес приложения'
+        required: false
+        default: 'https://mani-magic.ru/app/'
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Установить Playwright с Chromium
+        run: |
+          npm init -y >/dev/null
+          npm i -D playwright@latest >/dev/null
+          npx playwright install chromium --with-deps
+
+      - name: Снять скриншоты
+        env:
+          APP_URL: ${{ github.event.inputs.url || 'https://mani-magic.ru/app/' }}
+        run: |
+          mkdir -p shots
+          cat > shot.js <<'EOF'
+          const { chromium } = require('playwright');
+
+          const URL = process.env.APP_URL;
+          const shots = [];
+
+          (async () => {
+            const browser = await chromium.launch();
+            const ctx = await browser.newContext({
+              viewport: { width: 360, height: 640 },   // мобильная вёрстка
+              deviceScaleFactor: 3,                    // → файл 1080x1920
+              isMobile: true,
+              hasTouch: true,
+              locale: 'ru-RU',
+              colorScheme: 'dark',
+            });
+            const page = await ctx.newPage();
+            page.on('console', m => { if (m.type() === 'error') console.log('  [консоль]', m.text()); });
+
+            await page.goto(URL, { waitUntil: 'networkidle', timeout: 60000 });
+            await page.waitForTimeout(7000);           // сплэш со слоганом + анимация входа
+
+            async function shot(name, note) {
+              const file = `shots/${name}.png`;
+              await page.screenshot({ path: file });
+              shots.push(name);
+              console.log('снято:', name, '—', note);
+            }
+
+            async function closeAll() {
+              await page.evaluate(() => {
+                ['filterOverlay','favOverlay','selOverlay','catalogOverlay',
+                 'paywallOverlay','qrOverlay','workOverlay','masterWorksOverlay']
+                  .forEach(id => document.getElementById(id)?.classList.add('hidden'));
+              });
+              await page.waitForTimeout(400);
+            }
+
+            // 1. Вытянутая карта — главный экран приложения
+            await page.click('#shakeBtn');
+            await page.waitForFunction(
+              () => { const i = document.getElementById('frontImg'); return i && i.src && i.complete; },
+              { timeout: 20000 }
+            );
+            await page.waitForTimeout(2500);           // доиграть анимацию переворота
+            await shot('1-karta', 'вытянутая карта');
+
+            // 2. Примеры работ по этой карте
+            await page.click('#workBtn');
+            await page.waitForTimeout(2500);
+            await shot('2-raboty', 'примеры работ');
+            await closeAll();
+
+            // 3. Каталог всех карт
+            await page.click('#catalogBtn');
+            await page.waitForTimeout(2500);
+            await shot('3-katalog', 'каталог 49 карт');
+            await closeAll();
+
+            // 4. Фильтр по цвету
+            await page.click('#filterBtn');
+            await page.waitForTimeout(1500);
+            await shot('4-filtr', 'фильтр по цвету');
+            await closeAll();
+
+            // 5. Избранное — заранее положим пару карт, иначе экран пустой
+            await page.evaluate(() => {
+              // ключ ровно как в app/script.js (FAV_KEY), индексы — бесплатные карты
+              localStorage.setItem('maniMagicFavorites', JSON.stringify([0, 3, 7, 10]));
+            });
+            await page.reload({ waitUntil: 'networkidle' });
+            await page.waitForTimeout(7000);
+            await page.click('#favBtn');
+            await page.waitForTimeout(2000);
+            await shot('5-izbrannoe', 'избранное');
+
+            await browser.close();
+            console.log('\nВСЕГО СНЯТО:', shots.length);
+            if (shots.length < 3) { console.error('МАЛО: RuStore требует минимум 3'); process.exit(1); }
+          })().catch(e => { console.error('ОШИБКА:', e.message); process.exit(1); });
+          EOF
+          node shot.js
+          echo "--- размеры файлов ---"
+          ls -la shots/
+
+      - name: Проверить пропорции (должно быть ровно 1080x1920)
+        run: |
+          sudo apt-get install -y imagemagick >/dev/null 2>&1 || true
+          for f in shots/*.png; do identify -format "%f: %wx%h\n" "$f"; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rustore-screenshots
+          path: shots/
+          retention-days: 30
