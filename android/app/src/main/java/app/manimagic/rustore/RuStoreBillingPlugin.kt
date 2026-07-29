@@ -4,11 +4,12 @@ package app.manimagic.rustore
 // SDK инициализируется автоматически по console_app_id_value в AndroidManifest.xml —
 // вручную RuStorePayClient создавать не нужно.
 //
-// ВАЖНО перед первой сборкой: пара точных имён (PurchaseParams, поля результата покупки)
-// уточнить по официальному примеру rustore-dev/rustore-example-java-billing — документация
-// RuStore на момент написания была недоступна полностью (rate limit), поэтому здесь —
-// лучшее текущее понимание API. Если Kotlin-компилятор в CI укажет на несоответствие имени
-// метода/поля — это ожидаемо, достаточно поправить конкретную строку.
+// Имена сверены с официальной документацией (rustore.ru/help/sdk/pay/kotlin-java, версия
+// 11.0.0): класс параметров покупки — ProductPurchaseParams (не PurchaseParams), у результата
+// покупки поле purchaseId; addOnFailureListener отдаёт Throwable (не Exception) — Capacitor
+// PluginCall.reject() такой overload не понимает, поэтому передаём только e.message. Purchase
+// (результат getPurchases) — интерфейс с полем status; productId есть только у подтипа
+// ProductPurchase (наши товары все такие — не подписки RuStore, а разовые покупки).
 
 import com.getcapacitor.JSObject
 import com.getcapacitor.Plugin
@@ -18,7 +19,8 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import ru.rustore.sdk.pay.RuStorePayClient
 import ru.rustore.sdk.pay.model.PreferredPurchaseType
 import ru.rustore.sdk.pay.model.ProductId
-import ru.rustore.sdk.pay.model.PurchaseParams
+import ru.rustore.sdk.pay.model.ProductPurchase
+import ru.rustore.sdk.pay.model.ProductPurchaseParams
 
 @CapacitorPlugin(name = "RuStoreBilling")
 class RuStoreBillingPlugin : Plugin() {
@@ -31,7 +33,7 @@ class RuStoreBillingPlugin : Plugin() {
             return
         }
         try {
-            val params = PurchaseParams(productId = ProductId(productId))
+            val params = ProductPurchaseParams(productId = ProductId(productId))
             RuStorePayClient.instance.getPurchaseInteractor()
                 .purchase(params, preferredPurchaseType = PreferredPurchaseType.ONE_STEP)
                 .addOnSuccessListener { result ->
@@ -41,7 +43,7 @@ class RuStoreBillingPlugin : Plugin() {
                     call.resolve(ret)
                 }
                 .addOnFailureListener { e ->
-                    call.reject(e.message ?: "purchase_failed", e)
+                    call.reject(e.message ?: "purchase_failed")
                 }
         } catch (e: Exception) {
             call.reject(e.message ?: "purchase_failed", e)
@@ -73,7 +75,7 @@ class RuStoreBillingPlugin : Plugin() {
                 ret.put("products", arr)
                 call.resolve(ret)
             }
-            .addOnFailureListener { e -> call.reject(e.message ?: "get_products_failed", e) }
+            .addOnFailureListener { e -> call.reject(e.message ?: "get_products_failed") }
     }
 
     // Текущие покупки пользователя — на случай, если приложение перезапустили
@@ -88,13 +90,15 @@ class RuStoreBillingPlugin : Plugin() {
                 purchases.forEach { p ->
                     val item = JSObject()
                     item.put("purchaseId", p.purchaseId.toString())
-                    item.put("productId", p.productId.toString())
-                    item.put("status", p.purchaseState.toString())
+                    // Наши товары — все разовые покупки (ProductPurchase), не подписки RuStore;
+                    // productId есть только на этом подтипе, не на базовом интерфейсе Purchase.
+                    item.put("productId", (p as? ProductPurchase)?.productId?.toString() ?: "")
+                    item.put("status", p.status.toString())
                     arr.put(item)
                 }
                 ret.put("purchases", arr)
                 call.resolve(ret)
             }
-            .addOnFailureListener { e -> call.reject(e.message ?: "get_purchases_failed", e) }
+            .addOnFailureListener { e -> call.reject(e.message ?: "get_purchases_failed") }
     }
 }

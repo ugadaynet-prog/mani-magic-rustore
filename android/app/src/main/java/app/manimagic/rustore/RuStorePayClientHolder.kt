@@ -7,11 +7,13 @@ import android.content.Intent
 // если точное имя метода/интерактора у текущей версии RuStore Pay SDK отличается —
 // достаточно поправить только этот файл.
 //
-// ПРОВЕРИТЬ при первой сборке в CI по официальному примеру
-// rustore-dev/rustore-example-java-billing — Kotlin-компилятор сразу укажет
-// на несоответствие, если имя устарело.
+// Имена сверены с официальной документацией (rustore.ru/help/sdk/pay/kotlin-java,
+// версия 11.0.0) — getIntentInteractor().proceedIntent(intent) подтверждены.
+// Используется и из onCreate (холодный старт активности после возврата из банковского
+// приложения), и из onNewIntent (активность уже была жива) — по этой же документации
+// нужны оба вызова, не только onNewIntent.
 object RuStorePayClientHolder {
-    fun handleNewIntent(intent: Intent) {
+    fun handleIntent(intent: Intent) {
         ru.rustore.sdk.pay.RuStorePayClient.instance
             .getIntentInteractor()
             .proceedIntent(intent)

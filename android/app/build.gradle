@@ -62,7 +62,7 @@ dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
 
     // RuStore Pay SDK — нативный биллинг подписки (см. RuStoreBillingPlugin.kt)
-    implementation(platform("ru.rustore.sdk:bom:2026.06.01"))
+    implementation(platform("ru.rustore.sdk:bom:2026.07.01"))
     implementation("ru.rustore.sdk:pay")
 }
 

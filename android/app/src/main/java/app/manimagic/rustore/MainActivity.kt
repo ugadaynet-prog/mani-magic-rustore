@@ -8,15 +8,23 @@ class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(RuStoreBillingPlugin::class.java)
         super.onCreate(savedInstanceState)
+        // Холодный старт по возврату из банковского приложения (SBP/SberPay) —
+        // отдельно от onNewIntent, иначе теряется, если систем убила активность.
+        if (savedInstanceState == null) {
+            try {
+                RuStorePayClientHolder.handleIntent(intent)
+            } catch (e: Exception) {
+                // Не критично для покупок картой — не роняем активность из-за этого.
+            }
+        }
     }
 
-    // Возврат из банковского приложения (SBP/SberPay) в момент оплаты — актуально
-    // не для всех способов оплаты, но RuStore рекомендует обрабатывать это всегда.
-    // ПРОВЕРИТЬ при первой сборке: точное имя интерактора/метода в текущей версии SDK.
+    // Возврат из банковского приложения (SBP/SberPay) в момент оплаты, когда
+    // активность уже была жива — RuStore рекомендует обрабатывать это всегда.
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         try {
-            RuStorePayClientHolder.handleNewIntent(intent)
+            RuStorePayClientHolder.handleIntent(intent)
         } catch (e: Exception) {
             // Не критично для покупок картой — не роняем активность из-за этого.
         }
