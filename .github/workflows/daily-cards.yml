@@ -1,0 +1,135 @@
+name: Картинки «Карта дня» (49 штук)
+
+# Готовит запас ежедневного контента для VK и Telegram: по одной картинке
+# на каждую из 49 карт колоды — арт карты + её фраза + подпись бренда.
+# 49 карт = семь недель ежедневных постов без придумывания на ходу.
+#
+# Формат 1080x1350 (4:5) — вертикальный пост, одинаково хорошо смотрится
+# и в ленте VK, и в Telegram.
+#
+# Фразы и картинки берём из data.js того же репозитория, что и приложение,
+# чтобы контент всегда совпадал с тем, что человек увидит внутри колоды.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cards:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout app/ (карты и фразы)
+        uses: actions/checkout@v4
+        with:
+          repository: ugadaynet-prog/mani-magic
+          path: app
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Установить Playwright с Chromium
+        run: |
+          npm init -y >/dev/null
+          npm i -D playwright@latest >/dev/null
+          npx playwright install chromium --with-deps
+
+      - name: Отрендерить 49 картинок
+        run: |
+          mkdir -p cards
+          cat > render.js <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const { chromium } = require('playwright');
+
+          const src = fs.readFileSync('app/data.js', 'utf8');
+
+          // Разбираем колоду: нужны front (арт карты) и phrase (фраза дня).
+          const chunks = src.split(/\{\s*front:/).slice(1);
+          const deck = [];
+          chunks.forEach((c, i) => {
+            const front = (c.match(/^\s*"([^"]+)"/) || [])[1];
+            const phrase = (c.match(/phrase:\s*"([^"]+)"/) || [])[1];
+            if (front && phrase) {
+              deck.push({ num: String(i + 1).padStart(2, '0'), front: 'app/' + front, phrase });
+            }
+          });
+          console.log('карт разобрано:', deck.length);
+          if (deck.length !== 49) console.log('ВНИМАНИЕ: ожидали 49');
+
+          const html = (card) => `
+            <style>
+              * { margin:0; padding:0; box-sizing:border-box; }
+              body { width:1080px; height:1350px; background:#0d0d10; color:#f4efe9;
+                     font-family:-apple-system,"Segoe UI",Roboto,sans-serif;
+                     display:flex; flex-direction:column; align-items:center;
+                     justify-content:space-between; padding:64px 70px 56px; overflow:hidden; }
+              .serif { font-family:Georgia,"Times New Roman",serif; }
+            </style>
+            <div class="serif" style="font-size:26px;letter-spacing:.34em;
+                                      color:rgba(244,239,233,.55);">КАРТА ДНЯ</div>
+            <img src="file://${path.resolve(card.front)}"
+                 style="width:520px;height:640px;object-fit:cover;border-radius:26px;
+                        box-shadow:0 30px 70px rgba(0,0,0,.7);">
+            <div class="serif" style="font-size:41px;line-height:1.42;text-align:center;
+                                      max-width:900px;">
+              «${card.phrase}»
+            </div>
+            <div style="font-size:23px;color:rgba(244,239,233,.45);letter-spacing:.05em;">
+              MANI MAGIC · mani-magic.ru
+            </div>`;
+
+          (async () => {
+            const browser = await chromium.launch();
+            const page = await browser.newPage({ viewport: { width: 1080, height: 1350 } });
+            for (const card of deck) {
+              await page.setContent(html(card), { waitUntil: 'load' });
+              await page.waitForFunction(
+                () => Array.from(document.images).every(i => i.complete && i.naturalWidth > 0),
+                { timeout: 20000 }
+              );
+              await page.screenshot({ path: `cards/karta-${card.num}.png` });
+            }
+            await browser.close();
+            console.log('отрендерено:', deck.length);
+          })().catch(e => { console.error('ОШИБКА:', e.message); process.exit(1); });
+          EOF
+          node render.js
+
+          echo "--- фразы для подписей к постам ---"
+          node -e "
+            const fs=require('fs');
+            const src=fs.readFileSync('app/data.js','utf8');
+            const chunks=src.split(/\{\s*front:/).slice(1);
+            let out='';
+            chunks.forEach((c,i)=>{
+              const ph=(c.match(/phrase:\s*\"([^\"]+)\"/)||[])[1];
+              const lab=(c.match(/workLabels:\s*\[\s*\"([^\"]+)\"/)||[])[1];
+              const col=(c.match(/colors:\s*\[([^\]]*)\]/)||[])[1];
+              if(!ph) return;
+              const n=String(i+1).padStart(2,'0');
+              const colors=(col||'').match(/\"([^\"]+)\"/g)?.map(s=>s.replace(/\"/g,'').toLowerCase()).join(', ')||'';
+              out += 'karta-'+n+'.png\n'
+                  +  'Карта дня 🤍\n\n«'+ph+'»\n\n'
+                  +  (colors?('Палитра: '+colors+'\n'):'')
+                  +  (lab?('Дизайн: '+lab+'\n'):'')
+                  +  '\nСвою карту — mani-magic.ru/app/\n\n'
+                  +  '— — — — —\n\n';
+            });
+            fs.writeFileSync('cards/ТЕКСТЫ ПОСТОВ.txt', out);
+            console.log('текстов постов:', (out.match(/karta-/g)||[]).length);
+          "
+
+          ls cards/ | head -5
+          echo "всего: $(ls cards/*.png | wc -l) картинок"
+          du -sh cards/
+
+      - name: Проверить размеры
+        run: |
+          sudo apt-get install -y imagemagick >/dev/null 2>&1 || true
+          echo "картинок НЕ 1080x1350: $(identify -format '%wx%h\n' cards/*.png | grep -cv '^1080x1350$')"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: daily-cards
+          path: cards/
+          retention-days: 30
