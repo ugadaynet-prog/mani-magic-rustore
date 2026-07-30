@@ -81,8 +81,10 @@ jobs:
                 const page = await context.newPage();
                 await page.goto(BASE + '?card=' + n, { waitUntil: 'load', timeout: 30000 });
 
-                // Заставка держится минимум 1800мс + 500мс на исчезновение — ждём с запасом.
-                await page.waitForTimeout(2800);
+                // Ждём, пока заставка реально уйдёт из DOM (а не гадаем время —
+                // на CI загрузка идёт медленнее и дольше, чем локально).
+                await page.waitForSelector('#splash', { state: 'detached', timeout: 10000 }).catch(() => {});
+                await page.waitForTimeout(300);
 
                 // Открыть карту (флип к фразе на рубашке).
                 await page.click('#card').catch(() => {});
