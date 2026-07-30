@@ -1,0 +1,92 @@
+name: Альбом работ для VK (49 фото)
+
+# Собирает альбом «Примеры работ» для сообщества ВКонтакте: по одному фото
+# с каждой из 49 карт колоды — так альбом покрывает всю палитру и все типы
+# дизайнов, а не 245 почти одинаковых кадров.
+#
+# Зачем через CI: VK не принимает .webp (только JPG/PNG/GIF), а конвертера
+# в рабочей среде нет. Здесь есть ImageMagick.
+#
+# Файлы называются подписью дизайна из data.js (workLabels), чтобы при
+# загрузке в VK было сразу понятно, что на фото, и легко подписать.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  album:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout app/ (источник фото и подписей)
+        uses: actions/checkout@v4
+        with:
+          repository: ugadaynet-prog/mani-magic
+          path: app
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Поставить ImageMagick
+        run: sudo apt-get update -qq && sudo apt-get install -y imagemagick webp >/dev/null
+
+      - name: Собрать и конвертировать
+        run: |
+          mkdir -p album
+          cat > pick.js <<'EOF'
+          const fs = require('fs');
+          const src = fs.readFileSync('app/data.js', 'utf8');
+
+          // Разбираем data.js на карты: нужны works[0] и workLabels[0] каждой карты.
+          const cards = src.split(/\{\s*front:/).slice(1);
+          const out = [];
+          cards.forEach((chunk, i) => {
+            const num = String(i + 1).padStart(2, '0');
+            const works = (chunk.match(/works:\s*\[([^\]]*)\]/) || [])[1];
+            const labels = (chunk.match(/workLabels:\s*\[([^\]]*)\]/) || [])[1];
+            if (!works) return;                                  // у карты нет фото работ
+            const first = (works.match(/"([^"]+)"/) || [])[1];
+            if (!first) return;
+            const label = labels ? (labels.match(/"([^"]+)"/) || [])[1] : '';
+            // имя файла: номер + подпись дизайна, безопасные символы
+            const safe = (label || 'дизайн')
+              .replace(/[\\\/:*?"<>|]/g, '-')
+              .replace(/\s+/g, ' ')
+              .trim();
+            out.push({ num, path: 'app/' + first, name: `${num} — ${safe}` });
+          });
+          fs.writeFileSync('picked.json', JSON.stringify(out, null, 1));
+          console.log('карт с фото работ:', out.length);
+          EOF
+          node pick.js
+
+          node -e "
+            const fs=require('fs'), {execFileSync}=require('child_process');
+            const list=JSON.parse(fs.readFileSync('picked.json','utf8'));
+            let ok=0, miss=0;
+            for (const it of list) {
+              if (!fs.existsSync(it.path)) { console.log('НЕТ ФАЙЛА:', it.path); miss++; continue; }
+              const dest = 'album/' + it.name + '.jpg';
+              // -quality 90 достаточно для соцсети; -strip убирает метаданные
+              execFileSync('convert', [it.path, '-quality','90','-strip', dest]);
+              ok++;
+            }
+            console.log('сконвертировано:', ok, '| не найдено:', miss);
+          "
+
+          echo "--- что получилось ---"
+          ls album/ | head -10
+          echo "..."
+          echo "всего файлов: \$(ls album/ | wc -l)"
+          du -sh album/
+
+      - name: Проверить, что это настоящие JPEG нужного размера
+        run: |
+          for f in album/*.jpg; do identify -format "%f: %wx%h %m\n" "$f"; done | head -5
+          echo "не-JPEG среди файлов: $(identify -format '%m\n' album/*.jpg | grep -cv JPEG)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vk-photo-album
+          path: album/
+          retention-days: 30
