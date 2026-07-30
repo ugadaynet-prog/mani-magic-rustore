@@ -38,7 +38,6 @@ jobs:
           mkdir -p cards
           cat > render.js <<'EOF'
           const fs = require('fs');
-          const path = require('path');
           const { chromium } = require('playwright');
 
           const src = fs.readFileSync('app/data.js', 'utf8');
@@ -67,7 +66,7 @@ jobs:
             </style>
             <div class="serif" style="font-size:26px;letter-spacing:.34em;
                                       color:rgba(244,239,233,.55);">КАРТА ДНЯ</div>
-            <img src="file://${path.resolve(card.front)}"
+            <img src="${card.dataUri}"
                  style="width:520px;height:640px;object-fit:cover;border-radius:26px;
                         box-shadow:0 30px 70px rgba(0,0,0,.7);">
             <div class="serif" style="font-size:41px;line-height:1.42;text-align:center;
@@ -82,6 +81,10 @@ jobs:
             const browser = await chromium.launch();
             const page = await browser.newPage({ viewport: { width: 1080, height: 1350 } });
             for (const card of deck) {
+              // Картинку вставляем как data-URI: file:// со страницы about:blank
+              // Chromium блокирует, и <img> остаётся пустым навсегда.
+              card.dataUri = 'data:image/webp;base64,' +
+                fs.readFileSync(card.front).toString('base64');
               await page.setContent(html(card), { waitUntil: 'load' });
               await page.waitForFunction(
                 () => Array.from(document.images).every(i => i.complete && i.naturalWidth > 0),
