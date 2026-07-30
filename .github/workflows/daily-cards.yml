@@ -67,7 +67,7 @@ jobs:
             <div class="serif" style="font-size:26px;letter-spacing:.34em;
                                       color:rgba(244,239,233,.55);">КАРТА ДНЯ</div>
             <img src="${card.dataUri}"
-                 style="width:520px;height:640px;object-fit:cover;border-radius:26px;
+                 style="width:460px;height:789px;object-fit:contain;border-radius:26px;
                         box-shadow:0 30px 70px rgba(0,0,0,.7);">
             <div class="serif" style="font-size:41px;line-height:1.42;text-align:center;
                                       max-width:900px;">

@@ -42,7 +42,9 @@ jobs:
               body { background:#0d0d10; color:#f4efe9; overflow:hidden;
                      font-family: -apple-system, "Segoe UI", Roboto, sans-serif; }
               .serif { font-family: Georgia, "Times New Roman", serif; }
-              .card { border-radius:18px; object-fit:cover; box-shadow:0 24px 60px rgba(0,0,0,.65); }
+              /* object-fit:contain — не cover: реальные карты 694x1190, ширины ниже
+                 подобраны под это соотношение, но contain — страховка от обрезки. */
+              .card { border-radius:18px; object-fit:contain; box-shadow:0 24px 60px rgba(0,0,0,.65); }
             </style>`;
 
           // ── Аватар 400x400. VK кадрирует кругом, поэтому логотип уменьшен
@@ -75,13 +77,13 @@ jobs:
                 </div>
                 <div style="position:relative;width:700px;height:768px;">
                   <img class="card" src="${CARD('01')}"
-                       style="position:absolute;width:290px;height:466px;left:0;top:150px;
+                       style="position:absolute;width:272px;height:466px;left:9px;top:150px;
                               transform:rotate(-13deg);">
                   <img class="card" src="${CARD('04')}"
-                       style="position:absolute;width:306px;height:492px;left:200px;top:132px;
+                       style="position:absolute;width:287px;height:492px;left:209px;top:132px;
                               transform:rotate(-1deg);z-index:2;">
                   <img class="card" src="${CARD('25')}"
-                       style="position:absolute;width:290px;height:466px;left:408px;top:150px;
+                       style="position:absolute;width:272px;height:466px;left:417px;top:150px;
                               transform:rotate(12deg);">
                 </div>
               </div>
@@ -95,13 +97,13 @@ jobs:
                         justify-content:center;text-align:center;padding:0 70px;">
               <div style="position:relative;width:820px;height:660px;margin-bottom:80px;">
                 <img class="card" src="${CARD('01')}"
-                     style="position:absolute;width:330px;height:530px;left:20px;top:70px;
+                     style="position:absolute;width:309px;height:530px;left:30px;top:70px;
                             transform:rotate(-14deg);">
                 <img class="card" src="${CARD('04')}"
-                     style="position:absolute;width:350px;height:562px;left:235px;top:44px;
+                     style="position:absolute;width:328px;height:562px;left:246px;top:44px;
                             transform:rotate(0deg);z-index:2;">
                 <img class="card" src="${CARD('25')}"
-                     style="position:absolute;width:330px;height:530px;left:470px;top:70px;
+                     style="position:absolute;width:309px;height:530px;left:481px;top:70px;
                             transform:rotate(14deg);">
               </div>
               <div class="serif" style="font-size:96px;letter-spacing:.13em;line-height:1;">
