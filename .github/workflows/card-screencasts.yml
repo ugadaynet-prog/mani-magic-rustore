@@ -65,13 +65,15 @@ jobs:
 
           (async () => {
             const browser = await chromium.launch();
-            let ok = 0, fail = 0;
+            const failed = [];
 
-            for (const n of cards) {
-              const num = String(n).padStart(2, '0');
-              try {
-                console.log('--- карта', num, '---');
-                const context = await browser.newContext({
+            // Одна попытка записи. Возвращает true/false.
+            // ВАЖНО: если попытка провалилась, «осиротевший» файл записи нужно УДАЛИТЬ.
+            // Иначе он останется в raw/ под своим служебным именем (page@<хеш>.webm),
+            // шаг конвертации подхватит его наравне с нормальными, и в артефакт уедет
+            // мусор вместо недостающих карт — ровно это и случилось 31.07.2026.
+            async function attempt(n, num) {
+              const context = await browser.newContext({
                   // CSS в приложении завязана на реальный размер телефона (например,
                   // .card-wrap: width: min(86vw, 360px, ...) — жёсткий потолок 360px).
                   // Если задать viewport сразу 1080px шириной, 86vw упрётся в потолок
@@ -93,15 +95,22 @@ jobs:
                   hasTouch: true,
                   recordVideo: { dir: 'raw' },
                 });
-                // Не шлём реальные хиты в боевую Яндекс.Метрику при автозаписи.
-                await context.route(/mc\.yandex\./, (route) => route.abort());
+              // Не шлём реальные хиты в боевую Яндекс.Метрику при автозаписи.
+              await context.route(/mc\.yandex\./, (route) => route.abort());
 
-                const page = await context.newPage();
-                await page.goto(BASE + '?card=' + n, { waitUntil: 'load', timeout: 30000 });
+              const page = await context.newPage();
+              let ok = false;
+              try {
+                // domcontentloaded вместо load: 'load' ждёт ВСЕ картинки карты, а их
+                // тут много и сервер под серией запросов отвечает неровно. Готовность
+                // приложения всё равно проверяем ниже — по исчезновению заставки.
+                await page.goto(BASE + '?card=' + n, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-                // Ждём, пока заставка реально уйдёт из DOM (а не гадаем время —
-                // на CI загрузка идёт медленнее и дольше, чем локально).
-                await page.waitForSelector('#splash', { state: 'detached', timeout: 10000 }).catch(() => {});
+                // Заставка ушла из DOM = приложение реально загрузилось и отрисовало
+                // карту. Здесь НЕ глушим ошибку: если заставка не ушла, записывать
+                // нечего, и это должно считаться провалом попытки, а не «успехом»
+                // с пустым белым видео.
+                await page.waitForSelector('#splash', { state: 'detached', timeout: 20000 });
                 await page.waitForTimeout(300);
 
                 // Открыть карту (флип к фразе на рубашке).
@@ -116,23 +125,51 @@ jobs:
                 }
 
                 await page.waitForTimeout(1200);
-
-                await page.close();
-                await context.close();
-                const videoPath = await page.video().path();
-                const rawOut = path.join('raw', `karta-${num}.webm`);
-                fs.renameSync(videoPath, rawOut);
-                console.log('записано:', rawOut);
-                ok++;
+                ok = true;
               } catch (e) {
-                console.error('ОШИБКА на карте', num, ':', e.message);
-                fail++;
+                console.error('  попытка не удалась:', e.message);
               }
+
+              await page.close().catch(() => {});
+              await context.close().catch(() => {});
+
+              // page.video() может вернуть null — тогда .path() бросит синхронно,
+              // и .catch() на промисе уже не поможет. Проверяем заранее.
+              const video = page.video();
+              const videoPath = video ? await video.path().catch(() => null) : null;
+              if (ok && videoPath) {
+                fs.renameSync(videoPath, path.join('raw', `karta-${num}.webm`));
+                return true;
+              }
+              if (videoPath) { try { fs.unlinkSync(videoPath); } catch (e) {} }
+              return false;
+            }
+
+            for (const n of cards) {
+              const num = String(n).padStart(2, '0');
+              console.log('--- карта', num, '---');
+              let done = false;
+              // До 3 попыток: боевой сайт под серией из полусотни загрузок отвечает
+              // неровно, и одиночный таймаут — это не «карта сломана», а «не повезло».
+              for (let a = 1; a <= 3 && !done; a++) {
+                if (a > 1) {
+                  console.log('  повтор', a, 'из 3...');
+                  await new Promise((r) => setTimeout(r, 5000 * a));
+                }
+                done = await attempt(n, num);
+              }
+              if (done) console.log('  записано: karta-' + num + '.webm');
+              else { console.error('  КАРТА ' + num + ' НЕ ЗАПИСАНА после 3 попыток'); failed.push(num); }
             }
 
             await browser.close();
-            console.log('готово: успех', ok, ', ошибок', fail);
-            if (ok === 0) process.exit(1);
+            console.log('готово: успех', cards.length - failed.length, 'из', cards.length);
+            if (failed.length) console.error('НЕ ЗАПИСАНЫ:', failed.join(','));
+            // Список пишем в файл, но здесь НЕ падаем: пусть то, что записалось,
+            // всё-таки сконвертируется и уедет в артефакт. Полноту проверяет
+            // отдельный шаг в конце — он и покрасит прогон в красный.
+            fs.writeFileSync('failed.txt', failed.join('\n'));
+            fs.writeFileSync('requested.txt', String(cards.length));
           })().catch((e) => { console.error('ОШИБКА:', e.message); process.exit(1); });
           EOF
           node record.js
@@ -140,16 +177,38 @@ jobs:
       - name: Сконвертировать в mp4
         run: |
           command -v ffmpeg >/dev/null || (sudo apt-get update && sudo apt-get install -y ffmpeg)
-          for f in raw/*.webm; do
+          # ТОЛЬКО karta-*.webm: маска raw/*.webm подхватывала бы и служебные файлы
+          # неудачных попыток (page@<хеш>.webm), выдавая мусор за готовые карты.
+          for f in raw/karta-*.webm; do
             [ -e "$f" ] || continue
             base=$(basename "$f" .webm)
-            ffmpeg -y -loglevel error -i "$f" -vf "scale=1080:1920:flags=lanczos" -c:v libx264 -pix_fmt yuv420p -crf 18 -preset veryfast "mp4/$base.mp4"
+            # crf 23, а не 18: исходник — 360×640, апскейл новых деталей не создаёт,
+            # и низкий crf лишь раздувает вес, сохраняя артефакты растяжения.
+            ffmpeg -y -loglevel error -i "$f" -vf "scale=1080:1920:flags=lanczos" -c:v libx264 -pix_fmt yuv420p -crf 23 -preset veryfast "mp4/$base.mp4"
           done
           echo "всего mp4: $(ls mp4/*.mp4 2>/dev/null | wc -l)"
           du -sh mp4/ || true
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: card-screencasts
           path: mp4/
           retention-days: 30
+
+      # Прогон должен быть КРАСНЫМ, если записались не все карты. Без этой проверки
+      # неполный комплект молча уезжает в артефакт и выглядит как успех.
+      - name: Проверить, что записались все карты
+        if: always()
+        run: |
+          requested=$(cat requested.txt 2>/dev/null || echo 0)
+          got=$(ls mp4/karta-*.mp4 2>/dev/null | wc -l)
+          echo "запрошено: $requested, записано: $got"
+          if [ -s failed.txt ]; then
+            echo "НЕ ЗАПИСАНЫ карты: $(tr '\n' ',' < failed.txt)"
+          fi
+          if [ "$got" -ne "$requested" ]; then
+            echo "::error::записано $got из $requested — комплект неполный"
+            exit 1
+          fi
+          echo "комплект полный"
