@@ -72,7 +72,17 @@ jobs:
               try {
                 console.log('--- карта', num, '---');
                 const context = await browser.newContext({
-                  viewport: { width: 1080, height: 1920 },
+                  // CSS в приложении завязана на реальный размер телефона (например,
+                  // .card-wrap: width: min(86vw, 360px, ...) — жёсткий потолок 360px).
+                  // Если задать viewport сразу 1080px шириной, 86vw упрётся в потолок
+                  // и карта останется мелкой посреди пустого экрана. Поэтому записываем
+                  // как настоящий телефон (360×640 CSS px) и увеличиваем через
+                  // deviceScaleFactor — на выходе то же самое 1080×1920, но с версткой,
+                  // которая думает, что она на телефоне, а не на планшете.
+                  viewport: { width: 360, height: 640 },
+                  deviceScaleFactor: 3,
+                  isMobile: true,
+                  hasTouch: true,
                   recordVideo: { dir: 'raw', size: { width: 1080, height: 1920 } },
                 });
                 // Не шлём реальные хиты в боевую Яндекс.Метрику при автозаписи.
