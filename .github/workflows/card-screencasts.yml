@@ -75,15 +75,23 @@ jobs:
                   // CSS в приложении завязана на реальный размер телефона (например,
                   // .card-wrap: width: min(86vw, 360px, ...) — жёсткий потолок 360px).
                   // Если задать viewport сразу 1080px шириной, 86vw упрётся в потолок
-                  // и карта останется мелкой посреди пустого экрана. Поэтому записываем
-                  // как настоящий телефон (360×640 CSS px) и увеличиваем через
-                  // deviceScaleFactor — на выходе то же самое 1080×1920, но с версткой,
-                  // которая думает, что она на телефоне, а не на планшете.
+                  // и карта останется мелкой посреди пустого экрана — поэтому записываем
+                  // как настоящий телефон (360×640 CSS px).
+                  //
+                  // ВАЖНО: recordVideo.size здесь НЕ указываем и НЕ пытаемся получить
+                  // 1080×1920 прямо из Playwright. Проверено на практике: если попросить
+                  // recordVideo.size больше, чем реальный viewport (даже с
+                  // deviceScaleFactor), Playwright не растягивает картинку — он кладёт
+                  // маленький кадр 360×640 в угол большого холста, остальное заливает
+                  // серым (сам deviceScaleFactor на разрешение ЗАПИСИ не влияет, только
+                  // на чёткость рендера — проверено локально). Поэтому пишем как есть,
+                  // 360×640, а увеличение до 1080×1920 делаем ПОСЛЕ, через ffmpeg (scale) —
+                  // это честно растягивает картинку целиком, без пустых полей.
                   viewport: { width: 360, height: 640 },
                   deviceScaleFactor: 3,
                   isMobile: true,
                   hasTouch: true,
-                  recordVideo: { dir: 'raw', size: { width: 1080, height: 1920 } },
+                  recordVideo: { dir: 'raw' },
                 });
                 // Не шлём реальные хиты в боевую Яндекс.Метрику при автозаписи.
                 await context.route(/mc\.yandex\./, (route) => route.abort());
@@ -135,7 +143,7 @@ jobs:
           for f in raw/*.webm; do
             [ -e "$f" ] || continue
             base=$(basename "$f" .webm)
-            ffmpeg -y -loglevel error -i "$f" -c:v libx264 -pix_fmt yuv420p -crf 20 -preset veryfast "mp4/$base.mp4"
+            ffmpeg -y -loglevel error -i "$f" -vf "scale=1080:1920:flags=lanczos" -c:v libx264 -pix_fmt yuv420p -crf 18 -preset veryfast "mp4/$base.mp4"
           done
           echo "всего mp4: $(ls mp4/*.mp4 2>/dev/null | wc -l)"
           du -sh mp4/ || true
