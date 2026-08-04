@@ -1,0 +1,119 @@
+name: Починить иконку приложения (не совпадала с карточкой RuStore)
+
+# Модерация RuStore отклонила сборку: иконка на витрине не совпадает с иконкой
+# установленного приложения. Причина — `npx cap add android` при первом создании
+# проекта сгенерировал стандартную заглушку Capacitor (синий значок), а её никто
+# не заменил на настоящий логотип MANI Magic. Этот воркфлоу рендерит полный набор
+# android/app/src/main/res/mipmap-*/ic_launcher*.png из реальных иконок приложения
+# (app/assets/icons/icon-512.png и icon-512-maskable.png) и коммитит их в репозиторий.
+# После этого нужен обычный build-rustore.yml, чтобы собрать .aab уже с исправленной иконкой.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  fix-icon:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout rustore-app (сюда пишем иконки)
+        uses: actions/checkout@v4
+        with:
+          path: rustore-app
+
+      - name: Checkout app/ (источник иконки)
+        uses: actions/checkout@v4
+        with:
+          repository: ugadaynet-prog/mani-magic
+          path: app
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Отрендерить иконки всех плотностей
+        run: |
+          npm init -y >/dev/null
+          npm i -D playwright@latest >/dev/null
+          npx playwright install chromium --with-deps
+
+          cat > render.js <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const { chromium } = require('playwright');
+
+          const RES = 'rustore-app/android/app/src/main/res';
+          // легаси-иконка (ic_launcher/ic_launcher_round) — родная площадь под завязку,
+          // как везде в приложении. adaptive-иконка (foreground) — с запасом по краям,
+          // иначе часть логотипа обрежет маска на некоторых лаунчерах (круг/сквиркл).
+          const DENSITIES = [
+            { dir: 'mdpi',    legacy: 48,  fg: 108 },
+            { dir: 'hdpi',    legacy: 72,  fg: 162 },
+            { dir: 'xhdpi',   legacy: 96,  fg: 216 },
+            { dir: 'xxhdpi',  legacy: 144, fg: 324 },
+            { dir: 'xxxhdpi', legacy: 192, fg: 432 },
+          ];
+
+          const toDataUri = (p) => 'data:image/png;base64,' + fs.readFileSync(p).toString('base64');
+          const LOGO = toDataUri('app/assets/icons/icon-512.png');
+          const LOGO_SAFE = toDataUri('app/assets/icons/icon-512-maskable.png');
+
+          const legacyHtml = (uri, size) => `
+            <style>*{margin:0;padding:0;}
+            body{width:${size}px;height:${size}px;overflow:hidden;}
+            img{width:${size}px;height:${size}px;display:block;}</style>
+            <img src="${uri}">`;
+
+          // Логотип уже с запасом внутри icon-512-maskable.png (сам PWA-safe-zone),
+          // и дополнительно кладём его на 58% канвы — так гарантированно не вылезет
+          // за safe zone адаптивной иконки Android (там она строже, чем у PWA).
+          const fgHtml = (uri, size) => {
+            const inner = Math.round(size * 0.58);
+            const off = Math.round((size - inner) / 2);
+            return `
+            <style>*{margin:0;padding:0;}
+            body{width:${size}px;height:${size}px;background:#ffffff;position:relative;overflow:hidden;}
+            img{position:absolute;left:${off}px;top:${off}px;width:${inner}px;height:${inner}px;}</style>
+            <img src="${uri}">`;
+          };
+
+          (async () => {
+            const browser = await chromium.launch();
+            const page = await browser.newPage();
+
+            for (const d of DENSITIES) {
+              const dir = path.join(RES, 'mipmap-' + d.dir);
+              fs.mkdirSync(dir, { recursive: true });
+
+              await page.setViewportSize({ width: d.legacy, height: d.legacy });
+              await page.setContent(legacyHtml(LOGO, d.legacy), { waitUntil: 'load' });
+              await page.waitForFunction(() => document.images[0]?.complete && document.images[0].naturalWidth > 0);
+              await page.screenshot({ path: path.join(dir, 'ic_launcher.png') });
+              await page.screenshot({ path: path.join(dir, 'ic_launcher_round.png') });
+
+              await page.setViewportSize({ width: d.fg, height: d.fg });
+              await page.setContent(fgHtml(LOGO_SAFE, d.fg), { waitUntil: 'load' });
+              await page.waitForFunction(() => document.images[0]?.complete && document.images[0].naturalWidth > 0);
+              await page.screenshot({ path: path.join(dir, 'ic_launcher_foreground.png') });
+
+              console.log('готово:', d.dir, '- legacy', d.legacy, 'fg', d.fg);
+            }
+
+            await browser.close();
+          })().catch((e) => { console.error('ОШИБКА:', e.message); process.exit(1); });
+          EOF
+          node render.js
+
+      - name: Проверить, что получилось 15 файлов (3 на каждую из 5 плотностей)
+        run: |
+          count=$(find rustore-app/android/app/src/main/res/mipmap-*dpi -name "ic_launcher*.png" | wc -l)
+          echo "файлов: $count"
+          if [ "$count" -ne 15 ]; then echo "::error::ожидали 15 файлов, получили $count"; exit 1; fi
+
+      - name: Закоммитить исправленные иконки
+        run: |
+          cd rustore-app
+          git config user.email "ugadaynet@gmail.com"
+          git config user.name "ugadaynet-prog"
+          git add android/app/src/main/res/mipmap-*dpi/ic_launcher*.png
+          git commit -m "Заменить иконку-заглушку Capacitor на настоящий логотип MANI Magic" || echo "нечего коммитить"
+          git push
