@@ -11,6 +11,9 @@ name: Починить иконку приложения (не совпадал�
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write   # без этого GITHUB_TOKEN по умолчанию read-only, и git push падает 403
+
 jobs:
   fix-icon:
     runs-on: ubuntu-latest
