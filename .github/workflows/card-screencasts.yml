@@ -125,8 +125,18 @@ jobs:
                 await page.waitForTimeout(300);
 
                 // Открыть карту (флип к фразе на рубашке).
+                // Держим кадр по длине фразы, а не фиксированно. Раньше стояли
+                // глухие 900мс, но сам переворот идёт 700мс (transition у .card в
+                // style.css) — на чтение оставалось 200мс, и фразу не успевал
+                // прочитать никто. Считаем от 15 знаков в секунду: это привычная
+                // норма для субтитров. Плюс 700мс на переворот и 600мс на то,
+                // чтобы глаз перевёлся на текст.
                 await page.click('#card').catch(() => {});
-                await page.waitForTimeout(900);
+                const phrase = (await page.textContent('#phrase').catch(() => '')) || '';
+                const readMs = Math.min(9000, Math.max(2500,
+                  700 + 600 + Math.round((phrase.length / 15) * 1000)));
+                console.log('  фраза ' + phrase.length + ' знаков → держим ' + readMs + 'мс');
+                await page.waitForTimeout(readMs);
 
                 // Если у карты есть примеры работ — открыть галерею.
                 const workBtn = page.locator('#workBtn');
