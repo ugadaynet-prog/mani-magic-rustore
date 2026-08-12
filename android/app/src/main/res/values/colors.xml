@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Совпадает с --bg тёмной темы в app/style.css: полосы отступов под
+    <!-- Совпадает с фоном тёмной темы в app/style.css: полосы отступов под
          статус-баром и навигацией не должны отличаться от фона страницы. -->
     <color name="appBackground">#0d0d10</color>
 </resources>
