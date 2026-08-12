@@ -2,12 +2,35 @@ package app.manimagic.rustore
 
 import android.content.Intent
 import android.os.Bundle
+import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import com.getcapacitor.BridgeActivity
 
 class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(RuStoreBillingPlugin::class.java)
         super.onCreate(savedInstanceState)
+
+        // targetSdk 36 включает edge-to-edge принудительно, отказаться нельзя.
+        // WebView сам по себе не сдвигает контент от статус-бара/жестовой зоны —
+        // полагаться на CSS env(safe-area-inset-*) внутри страницы недостаточно
+        // (проверено: не помогло даже после пересборки с актуальным CSS). Поэтому
+        // применяем системные отступы как padding нативно, на самом WebView.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        bridge?.webView?.let { web ->
+            // WebView заливает своим фоном всю площадь, включая зону padding —
+            // без этого полосы сверху/снизу были бы белыми поверх тёмной страницы.
+            web.setBackgroundColor(ContextCompat.getColor(this, R.color.appBackground))
+            ViewCompat.setOnApplyWindowInsetsListener(web) { view, insets ->
+                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+                view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                insets
+            }
+            ViewCompat.requestApplyInsets(web)
+        }
+
         // Холодный старт по возврату из банковского приложения (SBP/SberPay) —
         // отдельно от onNewIntent, иначе теряется, если систем убила активность.
         if (savedInstanceState == null) {
