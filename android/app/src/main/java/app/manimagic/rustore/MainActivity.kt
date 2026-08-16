@@ -6,6 +6,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnAttach
 import com.getcapacitor.BridgeActivity
 
 class MainActivity : BridgeActivity() {
@@ -28,7 +29,12 @@ class MainActivity : BridgeActivity() {
                 view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
                 insets
             }
-            ViewCompat.requestApplyInsets(web)
+            // requestApplyInsets на НЕприкреплённой view — пустышка, а в onCreate
+            // WebView к окну ещё не прикреплён. Из-за этого версия 7 уехала в
+            // RuStore с неработающим фиксом: слушатель стоял, но его никто ни разу
+            // не дёргал, и системные панели перекрывали кнопки сверху и снизу.
+            // Просим отступы в момент реального прикрепления к окну.
+            web.doOnAttach { ViewCompat.requestApplyInsets(it) }
         }
 
         // Холодный старт по возврату из банковского приложения (SBP/SberPay) —
