@@ -69,12 +69,22 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew bundleRelease
+          # .aab — для загрузки в RuStore. .apk — чтобы поставить сборку на свой
+          # телефон и проверить её ДО отправки на модерацию: .aab на устройство
+          # не ставится в принципе, это формат магазина, а не пакет установки.
+          ./gradlew bundleRelease assembleRelease
 
       - name: Загрузить .aab как артефакт сборки
         uses: actions/upload-artifact@v4
         with:
           name: mani-magic-rustore-aab
           path: rustore-app/android/app/build/outputs/bundle/release/app-release.aab
+          retention-days: 30
+
+      - name: Загрузить .apk для проверки на телефоне
+        uses: actions/upload-artifact@v4
+        with:
+          name: mani-magic-rustore-apk
+          path: rustore-app/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
 
