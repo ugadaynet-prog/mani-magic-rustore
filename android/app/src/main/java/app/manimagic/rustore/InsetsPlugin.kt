@@ -45,14 +45,40 @@ class InsetsPlugin : Plugin() {
             return
         }
 
-        val bars = ViewCompat.getRootWindowInsets(web)
-            ?.getInsets(WindowInsetsCompat.Type.systemBars())
+        val root = ViewCompat.getRootWindowInsets(web)
         val density = web.resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
 
-        result.put("top", (bars?.top ?: 0) / density)
-        result.put("bottom", (bars?.bottom ?: 0) / density)
-        result.put("left", (bars?.left ?: 0) / density)
-        result.put("right", (bars?.right ?: 0) / density)
+        // Берём максимум по нескольким типам, а не только systemBars.
+        // Версия 1.3.1 на живом устройстве получила верный НИЖНИЙ отступ и
+        // нулевой верхний — значит на этом телефоне статус-бар по systemBars()
+        // не отдался. Что именно его отдаёт, вслепую не выяснить, поэтому
+        // спрашиваем все подходящие типы и берём наибольшее значение: лишнего
+        // это не добавит (типы описывают одни и те же панели), а пропустить
+        // панель уже не даст.
+        val types = intArrayOf(
+            WindowInsetsCompat.Type.systemBars(),
+            WindowInsetsCompat.Type.statusBars(),
+            WindowInsetsCompat.Type.navigationBars(),
+            WindowInsetsCompat.Type.displayCutout(),
+        )
+        var top = 0; var bottom = 0; var left = 0; var right = 0
+        for (t in types) {
+            val i = root?.getInsets(t) ?: continue
+            if (i.top > top) top = i.top
+            if (i.bottom > bottom) bottom = i.bottom
+            if (i.left > left) left = i.left
+            if (i.right > right) right = i.right
+        }
+
+        result.put("top", top / density)
+        result.put("bottom", bottom / density)
+        result.put("left", left / density)
+        result.put("right", right / density)
+        // Отдельно отдаём сырые значения по systemBars — чтобы на устройстве
+        // было видно, отличаются ли они от максимума, и какой тип сработал.
+        val sys = root?.getInsets(WindowInsetsCompat.Type.systemBars())
+        result.put("sysTop", (sys?.top ?: 0) / density)
+        result.put("sysBottom", (sys?.bottom ?: 0) / density)
         // ready=false означает «окно ещё не отдало инсеты», а не «панелей нет»:
         // без этого признака страница не отличила бы одно от другого и осталась
         // бы с нулями навсегда.
