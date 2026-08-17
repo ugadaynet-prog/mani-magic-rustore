@@ -3,39 +3,29 @@ package app.manimagic.rustore
 import android.content.Intent
 import android.os.Bundle
 import androidx.core.content.ContextCompat
-import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.doOnAttach
 import com.getcapacitor.BridgeActivity
 
 class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(RuStoreBillingPlugin::class.java)
+        registerPlugin(InsetsPlugin::class.java)
         super.onCreate(savedInstanceState)
 
-        // targetSdk 36 включает edge-to-edge принудительно, отказаться нельзя.
-        // WebView сам по себе не сдвигает контент от статус-бара/жестовой зоны —
-        // полагаться на CSS env(safe-area-inset-*) внутри страницы недостаточно
-        // (проверено: не помогло даже после пересборки с актуальным CSS). Поэтому
-        // применяем системные отступы как padding нативно, на самом WebView.
+        // targetSdk 36 включает edge-to-edge принудительно, отказаться нельзя:
+        // окно всегда во весь экран, под системными панелями.
+        //
+        // Отступы под панели теперь расставляет САМА СТРАНИЦА — она спрашивает их
+        // размеры через InsetsPlugin и подставляет в свои CSS-переменные. Версии 7
+        // и 8 пытались решать это нативно, padding'ом на WebView: сначала с
+        // requestApplyInsets в onCreate, потом при прикреплении view к окну. Оба
+        // раза на живом телефоне контент всё равно оставался под панелями, поэтому
+        // от нативного padding отказались совсем — иначе отступы сложились бы с
+        // теми, что ставит страница.
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        bridge?.webView?.let { web ->
-            // WebView заливает своим фоном всю площадь, включая зону padding —
-            // без этого полосы сверху/снизу были бы белыми поверх тёмной страницы.
-            web.setBackgroundColor(ContextCompat.getColor(this, R.color.appBackground))
-            ViewCompat.setOnApplyWindowInsetsListener(web) { view, insets ->
-                val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-                insets
-            }
-            // requestApplyInsets на НЕприкреплённой view — пустышка, а в onCreate
-            // WebView к окну ещё не прикреплён. Из-за этого версия 7 уехала в
-            // RuStore с неработающим фиксом: слушатель стоял, но его никто ни разу
-            // не дёргал, и системные панели перекрывали кнопки сверху и снизу.
-            // Просим отступы в момент реального прикрепления к окну.
-            web.doOnAttach { ViewCompat.requestApplyInsets(it) }
-        }
+        bridge?.webView?.setBackgroundColor(
+            ContextCompat.getColor(this, R.color.appBackground)
+        )
 
         // Холодный старт по возврату из банковского приложения (SBP/SberPay) —
         // отдельно от onNewIntent, иначе теряется, если систем убила активность.
