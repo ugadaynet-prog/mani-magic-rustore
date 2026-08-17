@@ -82,7 +82,7 @@ class InsetsPlugin : Plugin() {
         // ready=false означает «окно ещё не отдало инсеты», а не «панелей нет»:
         // без этого признака страница не отличила бы одно от другого и осталась
         // бы с нулями навсегда.
-        result.put("ready", bars != null)
+        result.put("ready", root != null)
         call.resolve(result)
     }
 }
