@@ -1,5 +1,11 @@
 {
   "appId": "app.manimagic.rustore",
   "appName": "MANI Magic",
-  "webDir": "www"
+  "webDir": "www",
+  "server": {
+    "allowNavigation": [
+      "mani-magic.ru",
+      "api.mani-magic.ru"
+    ]
+  }
 }
