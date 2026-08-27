@@ -32,7 +32,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-          pip install numpy pillow onnx onnxruntime
+          # onnxscript нужен новому экспортёру torch.onnx: без него export
+          # падает на импорте, уже ПОСЛЕ того как обучение отработало.
+          pip install numpy pillow onnx onnxruntime onnxscript
 
       - name: Подготовить данные
         run: python prepare.py
@@ -45,10 +47,14 @@ jobs:
       - name: Экспорт в ONNX
         run: python export.py
 
+      # Сохраняем ДАЖЕ если экспорт упал: обучение стоит минут, и терять его
+      # из-за последнего шага незачем — веса в best.pt уже лежат.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: nail-model
           path: |
             rustore-app/ml/nail-unet.onnx
             rustore-app/ml/metrics.json
-          if-no-files-found: error
+            rustore-app/ml/best.pt
+          if-no-files-found: warn
