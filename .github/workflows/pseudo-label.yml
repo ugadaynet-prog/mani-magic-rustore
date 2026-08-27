@@ -43,12 +43,23 @@ jobs:
       # первом создании детектора: OSError libEGL.so.1.
       - name: Системные библиотеки для mediapipe
         working-directory: .
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgl1 libglib2.0-0
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libgles2 libgl1 libopengl0 libglib2.0-0 libgomp1
 
       - name: Поставить зависимости
         run: |
           python -m pip install --upgrade pip
           pip install numpy pillow scipy mediapipe
+
+      # Ставить недостающие библиотеки по одной за прогон — долгая игра: каждая
+      # следующая обнаруживается только на следующем запуске. ldd показывает
+      # весь список сразу, поэтому диагностика идёт ДО первого использования.
+      - name: Проверить, что нативная часть mediapipe грузится
+        run: |
+          LIB=$(python -c "import mediapipe, os, glob; print(glob.glob(os.path.join(os.path.dirname(mediapipe.__file__), '**', '*.so'), recursive=True)[0])")
+          echo "библиотека: $LIB"
+          ldd "$LIB" | grep -i "not found" && echo "ВЫШЕ — чего не хватает" || echo "все зависимости на месте"
 
       - name: Скачать детектор кисти
         run: |
