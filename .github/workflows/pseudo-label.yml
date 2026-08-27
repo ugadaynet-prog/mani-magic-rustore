@@ -1,0 +1,62 @@
+name: Label our own nail photos
+
+# Разметка 245 работ колоды масками ногтей. Отдельно от обучения: разметку
+# смотрят глазами и принимают решением, а не гоняют вслепую перед каждым
+# обучением.
+on:
+  workflow_dispatch:
+    inputs:
+      tol:
+        description: 'Допуск по цвету (по умолчанию 60)'
+        required: false
+        default: '60'
+      limit:
+        description: 'Ограничить числом работ (0 — все)'
+        required: false
+        default: '0'
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: rustore-app/ml
+    steps:
+      # Две папки рядом — та же схема, что у сборки .aab: фото работ и data.js
+      # живут в ДРУГОМ репозитории (mani-magic), и pseudo.py ищет их в ../../app.
+      - uses: actions/checkout@v4
+        with:
+          path: rustore-app
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ugadaynet-prog/mani-magic
+          path: app
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Поставить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pillow scipy mediapipe
+
+      - name: Скачать детектор кисти
+        run: |
+          curl -sSL -o data/hand_landmarker.task \
+            https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+          ls -la data/hand_landmarker.task
+
+      - name: Разметить
+        run: python pseudo.py --tol ${{ github.event.inputs.tol }} --limit ${{ github.event.inputs.limit }}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pseudo-labels
+          path: |
+            rustore-app/ml/data/ours.zip
+            rustore-app/ml/pseudo.png
+          if-no-files-found: warn
