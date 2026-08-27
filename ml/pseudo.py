@@ -170,13 +170,17 @@ def clean(mask, min_share=0.0004, max_share=0.2, fill_min=0.4, aspect_max=5.0,
     return keep, n, len(keep_ids)
 
 
-def sam_masks(predictor, im, points, need_iou=0.75):
+def sam_masks(predictor, im, points, need_iou=0.55):
     """Достраиваем каждую точку до целого ногтя.
 
     Точка внутри ногтя у нас надёжная — она пришла из совпадения с известным
     цветом лака внутри коридора пальца. Чего нам не хватало, так это границы:
-    её SAM и даёт. Берём лучшую из трёх гипотез и отбрасываем те, в которых
-    он сам не уверен.
+    её SAM и даёт.
+
+    Берём САМУЮ МЕЛКУЮ из трёх гипотез, а не самую уверенную. SAM возвращает
+    три уровня вложенности — часть, объект, целое, — и по одной точке он
+    уверенно предлагает ПАЛЕЦ: для него это более естественный объект, чем
+    ноготь на нём. Ноготь здесь всегда «часть», то есть наименьшая маска.
     """
     import numpy as np
     if not points:
@@ -190,13 +194,19 @@ def sam_masks(predictor, im, points, need_iou=0.75):
             point_labels=np.array([1]),
             multimask_output=True,
         )
-        best = int(np.argmax(scores))
-        if float(scores[best]) < need_iou:
-            continue
-        m = masks[best]
-        # Ноготь не бывает половиной кадра: такую маску SAM выдаёт, когда
-        # цепляется за палец или за руку целиком.
-        if m.mean() > 0.12:
+        order = sorted(range(len(masks)), key=lambda i: masks[i].sum())
+        m = None
+        for i in order:
+            if float(scores[i]) < need_iou:
+                continue
+            cand = masks[i]
+            # Ноготь не бывает крупной частью кадра: так выглядит палец или
+            # рука целиком, а не ноготь.
+            if cand.mean() > 0.05:
+                continue
+            m = cand
+            break
+        if m is None:
             continue
         out |= m
         used += 1
