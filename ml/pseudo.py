@@ -21,6 +21,12 @@
 Вместе они работают: цвет отсекает кожу внутри коридора, коридор отсекает фон
 того же цвета.
 
+Одного цвета оказалось мало и во второй раз: маски выходили ЧИСТЫЕ, но
+неполные — один-два ногтя из пяти. Для обучения это хуже мусора, потому что
+незакрашенный ноготь учит модель считать ноготь фоном. Зато цветовые пятна —
+надёжные ТОЧКИ внутри ногтей, а достроить точку до целого объекта умеет
+Segment Anything. Он и делает финальную маску (--sam).
+
 Результат — zip тех же форм, что и открытый набор (images/ и labels/), плюс
 коллаж для глазной проверки: доверять такой разметке вслепую нельзя.
 """
@@ -164,12 +170,59 @@ def clean(mask, min_share=0.0004, max_share=0.2, fill_min=0.4, aspect_max=5.0,
     return keep, n, len(keep_ids)
 
 
+def sam_masks(predictor, im, points, need_iou=0.75):
+    """Достраиваем каждую точку до целого ногтя.
+
+    Точка внутри ногтя у нас надёжная — она пришла из совпадения с известным
+    цветом лака внутри коридора пальца. Чего нам не хватало, так это границы:
+    её SAM и даёт. Берём лучшую из трёх гипотез и отбрасываем те, в которых
+    он сам не уверен.
+    """
+    import numpy as np
+    if not points:
+        return None
+    predictor.set_image(np.asarray(im))
+    out = np.zeros(np.asarray(im).shape[:2], dtype=bool)
+    used = 0
+    for (px, py) in points:
+        masks, scores, _ = predictor.predict(
+            point_coords=np.array([[px, py]]),
+            point_labels=np.array([1]),
+            multimask_output=True,
+        )
+        best = int(np.argmax(scores))
+        if float(scores[best]) < need_iou:
+            continue
+        m = masks[best]
+        # Ноготь не бывает половиной кадра: такую маску SAM выдаёт, когда
+        # цепляется за палец или за руку целиком.
+        if m.mean() > 0.12:
+            continue
+        out |= m
+        used += 1
+    return out if used else None
+
+
+def centroids(mask):
+    """Центры пятен — они и станут подсказками для SAM."""
+    from scipy import ndimage
+    lab, n = ndimage.label(mask)
+    if not n:
+        return []
+    pts = ndimage.center_of_mass(mask, lab, range(1, n + 1))
+    return [(int(x), int(y)) for (y, x) in pts]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--tol', type=float, default=45.0)
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--out', default=os.path.join(HERE, 'data', 'ours.zip'))
     ap.add_argument('--sheet', default=os.path.join(HERE, 'pseudo.png'))
+    ap.add_argument('--sam', action='store_true',
+                    help='достраивать пятна до целых ногтей через Segment Anything')
+    ap.add_argument('--hint-tol', type=float, default=70.0,
+                    help='допуск цвета для ТОЧЕК: он может быть щедрее, чем для маски')
     args = ap.parse_args()
 
     import mediapipe as mp
@@ -183,6 +236,36 @@ def main():
         min_hand_detection_confidence=0.15,
         min_hand_presence_confidence=0.15,
     ))
+
+    predictor = None
+    if args.sam:
+        import torch
+        from transformers import SamModel, SamProcessor
+
+        class HFPredictor:
+            """Тонкая обёртка, чтобы вызов совпадал с обычным SAM-предиктором."""
+
+            def __init__(self):
+                self.model = SamModel.from_pretrained('facebook/sam-vit-base').eval()
+                self.proc = SamProcessor.from_pretrained('facebook/sam-vit-base')
+                self.image = None
+
+            def set_image(self, arr):
+                self.image = Image.fromarray(arr)
+
+            def predict(self, point_coords, point_labels, multimask_output=True):
+                inp = self.proc(self.image, input_points=[[point_coords.tolist()]],
+                                return_tensors='pt')
+                with torch.no_grad():
+                    out = self.model(**inp)
+                masks = self.proc.image_processor.post_process_masks(
+                    out.pred_masks.cpu(), inp['original_sizes'].cpu(),
+                    inp['reshaped_input_sizes'].cpu())[0][0].numpy()
+                scores = out.iou_scores.cpu().numpy().reshape(-1)
+                return masks, scores, None
+
+        predictor = HFPredictor()
+        print('SAM загружен', flush=True)
 
     deck = read_deck()
     if args.limit:
@@ -219,6 +302,18 @@ def main():
 
         mask = colour_mask(arr, item['all'], args.tol) & zone
         mask, total, kept = clean(mask, arr=arr, skin=skin)
+
+        if predictor is not None:
+            # Точки берём по ЩЕДРОМУ порогу: для подсказки достаточно попасть
+            # внутрь ногтя, а границу всё равно рисует SAM. Проверку «окружено
+            # кожей» оставляем — она отсеивает фон, а не уточняет форму.
+            hint = colour_mask(arr, item['all'], args.hint_tol) & zone
+            hint, _, _ = clean(hint, arr=arr, skin=skin)
+            pts = centroids(hint if hint.any() else mask)
+            grown = sam_masks(predictor, im, pts)
+            if grown is not None:
+                mask = grown
+
         if not mask.any():
             stats['пусто после чистки'] += 1
             continue
