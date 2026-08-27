@@ -31,6 +31,18 @@ def main():
         opset_version=17,
     )
 
+    # Новый экспортёр torch кладёт веса ОТДЕЛЬНЫМ файлом .onnx.data, а в самом
+    # .onnx оставляет только граф. В браузере такой файл грузится и падает на
+    # первом же тензоре: onnxruntime-web не умеет искать внешние данные.
+    # Пересобираем в один файл — заодно это единственный формат, который можно
+    # просто положить в сборку приложения.
+    import onnx
+    model = onnx.load(OUT)
+    onnx.save_model(model, OUT, save_as_external_data=False)
+    for junk in (OUT + '.data', os.path.join(HERE, 'nail-unet.onnx.data')):
+        if os.path.exists(junk):
+            os.remove(junk)
+
     import onnxruntime as ort
     sess = ort.InferenceSession(OUT, providers=['CPUExecutionProvider'])
     with torch.no_grad():
@@ -45,6 +57,10 @@ def main():
         'расхождение с PyTorch': round(diff, 6),
     }
     print(json.dumps(info, ensure_ascii=False, indent=2))
+    # 1.1 млн параметров это ~4.4 МБ fp32. Файл заметно меньше означает, что
+    # веса опять уехали наружу, и в браузере он работать не будет.
+    if os.path.getsize(OUT) < 3e6:
+        raise SystemExit('в .onnx нет весов — они остались во внешнем файле')
     if diff > 1e-3:
         raise SystemExit('ONNX считает иначе, чем PyTorch — в браузер такое отдавать нельзя')
 
