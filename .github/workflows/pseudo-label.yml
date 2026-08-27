@@ -38,6 +38,13 @@ jobs:
         with:
           python-version: '3.11'
 
+      # mediapipe тянет за собой нативную библиотеку, которой нужен OpenGL.
+      # На голом раннере его нет, и падение происходит не при установке, а при
+      # первом создании детектора: OSError libEGL.so.1.
+      - name: Системные библиотеки для mediapipe
+        working-directory: .
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libegl1 libgl1 libglib2.0-0
+
       - name: Поставить зависимости
         run: |
           python -m pip install --upgrade pip
