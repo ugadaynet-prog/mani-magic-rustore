@@ -84,9 +84,10 @@ def finger_zone(shape, pts):
         ux, uy = (tx - dx) / ln, (ty - dy) / ln
         ax = (xx - tx) * ux + (yy - ty) * uy          # вдоль пальца
         sx = np.abs(-(xx - tx) * uy + (yy - ty) * ux)  # поперёк
-        # Назад — до сустава, вперёд — с большим запасом: нарощенный ноготь
-        # уходит далеко за точку, которую модель считает кончиком пальца.
-        zone |= (ax > -1.1 * ln) & (ax < 3.0 * ln) & (sx < 0.9 * ln)
+        # Первый заход брал коридор втрое длиннее пальца и почти во всю его
+        # ширину — и вылезал за руку на фон, который потом и размечался.
+        # Ноготь назад за сустав не уходит, вбок за палец тоже.
+        zone |= (ax > -0.5 * ln) & (ax < 2.0 * ln) & (sx < 0.55 * ln)
     return zone
 
 
@@ -99,7 +100,35 @@ def colour_mask(arr, colours, tol):
     return m
 
 
-def clean(mask, min_share=0.0004, max_share=0.2, fill_min=0.4, aspect_max=5.0):
+def skin_colour(arr, pts):
+    """Цвет кожи этой руки: суставы у основания пальцев и запястье.
+
+    Там лака не бывает никогда, поэтому образец надёжный, а нужен он для
+    проверки ниже: ноготь ОКРУЖЁН кожей, пятно на фоне — нет.
+    """
+    h, w = arr.shape[:2]
+    vals = []
+    for k in (0, 5, 9, 13, 17):
+        x, y = int(pts[k][0] * w), int(pts[k][1] * h)
+        y0, y1 = max(0, y - 3), min(h, y + 4)
+        x0, x1 = max(0, x - 3), min(w, x + 4)
+        if y1 > y0 and x1 > x0:
+            vals.append(arr[y0:y1, x0:x1].reshape(-1, 3))
+    return np.concatenate(vals).mean(axis=0) if vals else None
+
+
+def surrounded_by_skin(arr, comp, skin, tol=48.0, need=0.3):
+    """Какая доля кольца вокруг пятна похожа на кожу."""
+    from scipy import ndimage
+    ring = ndimage.binary_dilation(comp, iterations=4) & ~comp
+    if not ring.any() or skin is None:
+        return False
+    d = np.linalg.norm(arr[ring] - skin[None, :], axis=1)
+    return float((d < tol).mean()) >= need
+
+
+def clean(mask, min_share=0.0004, max_share=0.2, fill_min=0.4, aspect_max=5.0,
+          arr=None, skin=None):
     """Убираем всё, что не похоже на ноготь по форме.
 
     Ноготь — компактное выпуклое пятно. Рваные росчерки и полосы фона своего
@@ -119,8 +148,13 @@ def clean(mask, min_share=0.0004, max_share=0.2, fill_min=0.4, aspect_max=5.0):
         share = area / (h * w)
         fill = area / (bh * bw)
         aspect = max(bh, bw) / max(1, min(bh, bw))
-        if min_share < share < max_share and fill > fill_min and aspect < aspect_max:
-            keep_ids.append(i)
+        if not (min_share < share < max_share and fill > fill_min and aspect < aspect_max):
+            continue
+        # Главная проверка: вокруг ногтя кожа. Куски фона того же цвета —
+        # именно на этом и отсеиваются, форма их не выдаёт.
+        if arr is not None and not surrounded_by_skin(arr, lab == i, skin):
+            continue
+        keep_ids.append(i)
     if not keep_ids:
         return np.zeros_like(mask), n, 0
     keep = np.isin(lab, keep_ids)
@@ -132,7 +166,7 @@ def clean(mask, min_share=0.0004, max_share=0.2, fill_min=0.4, aspect_max=5.0):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--tol', type=float, default=60.0)
+    ap.add_argument('--tol', type=float, default=45.0)
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--out', default=os.path.join(HERE, 'data', 'ours.zip'))
     ap.add_argument('--sheet', default=os.path.join(HERE, 'pseudo.png'))
@@ -178,8 +212,13 @@ def main():
         for hand in res.hand_landmarks:
             zone |= finger_zone(arr.shape[:2], [(p.x, p.y) for p in hand])
 
+        skin = None
+        for hand in res.hand_landmarks:
+            skin = skin_colour(arr, [(p.x, p.y) for p in hand])
+            break
+
         mask = colour_mask(arr, item['all'], args.tol) & zone
-        mask, total, kept = clean(mask)
+        mask, total, kept = clean(mask, arr=arr, skin=skin)
         if not mask.any():
             stats['пусто после чистки'] += 1
             continue
