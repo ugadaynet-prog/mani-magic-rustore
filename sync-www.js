@@ -39,7 +39,15 @@ if (fs.existsSync(ADDONS)) copyDir(ADDONS, DEST);
 // Имена фиксированы версией в package-lock.json.
 const ortDist = path.join(__dirname, 'node_modules', 'onnxruntime-web', 'dist');
 const tryOnDest = path.join(DEST, 'tryon');
-for (const name of ['ort.min.js', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']) {
+// Runtime динамически подгружает также JSEP-модуль. Копируем полный набор,
+// иначе Android WebView получает «Failed to fetch dynamically imported module».
+for (const name of [
+  'ort.min.js',
+  'ort-wasm-simd-threaded.mjs',
+  'ort-wasm-simd-threaded.wasm',
+  'ort-wasm-simd-threaded.jsep.mjs',
+  'ort-wasm-simd-threaded.jsep.wasm'
+]) {
   const from = path.join(ortDist, name);
   if (!fs.existsSync(from)) throw new Error(`Не найден ${from}; выполните npm ci`);
   fs.copyFileSync(from, path.join(tryOnDest, name));
