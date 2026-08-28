@@ -35,19 +35,12 @@ function copyDir(src, dest) {
 copyDir(SRC, DEST);
 if (fs.existsSync(ADDONS)) copyDir(ADDONS, DEST);
 
-// ONNX Runtime приходит из npm: в git не храним вторую копию 11-МБ WASM.
-// Имена фиксированы версией в package-lock.json.
+// ONNX Runtime 1.16 использует обычные JS/WASM-файлы и не делает dynamic import
+// .mjs. Это необходимо для Android WebView в Capacitor: версия 1.22 загружает
+// JSEP-модуль .mjs, который в данной конфигурации WebView не открывается.
 const ortDist = path.join(__dirname, 'node_modules', 'onnxruntime-web', 'dist');
 const tryOnDest = path.join(DEST, 'tryon');
-// Runtime динамически подгружает также JSEP-модуль. Копируем полный набор,
-// иначе Android WebView получает «Failed to fetch dynamically imported module».
-for (const name of [
-  'ort.min.js',
-  'ort-wasm-simd-threaded.mjs',
-  'ort-wasm-simd-threaded.wasm',
-  'ort-wasm-simd-threaded.jsep.mjs',
-  'ort-wasm-simd-threaded.jsep.wasm'
-]) {
+for (const name of ['ort.min.js', 'ort-wasm-simd-threaded.wasm', 'ort-wasm-simd.wasm']) {
   const from = path.join(ortDist, name);
   if (!fs.existsSync(from)) throw new Error(`Не найден ${from}; выполните npm ci`);
   fs.copyFileSync(from, path.join(tryOnDest, name));
