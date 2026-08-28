@@ -10,6 +10,7 @@ class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(RuStoreBillingPlugin::class.java)
         registerPlugin(InsetsPlugin::class.java)
+        registerPlugin(TryOnMediaPlugin::class.java)
         super.onCreate(savedInstanceState)
 
         // targetSdk 36 включает edge-to-edge принудительно, отказаться нельзя:

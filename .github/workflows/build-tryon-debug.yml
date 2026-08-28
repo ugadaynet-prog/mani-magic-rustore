@@ -1,0 +1,67 @@
+name: Build try-on test APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - 'app-addons/**'
+      - 'android/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'sync-www.js'
+      - '.github/workflows/build-tryon-debug.yml'
+
+jobs:
+  debug-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Android project
+        uses: actions/checkout@v4
+        with:
+          path: rustore-app
+
+      - name: Checkout web application
+        uses: actions/checkout@v4
+        with:
+          repository: ugadaynet-prog/mani-magic
+          path: app
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: rustore-app/package-lock.json
+
+      - name: Install dependencies
+        working-directory: rustore-app
+        run: npm ci
+
+      - name: Sync web assets and Capacitor
+        working-directory: rustore-app
+        run: |
+          node sync-www.js
+          npx cap sync android
+
+      - name: Verify model integrity
+        working-directory: rustore-app
+        run: echo "ba41b982e219700ec863e2efeead7886e791d6230e022579b0ca3e4d18797d7a  www/tryon/nail-unet.onnx" | sha256sum --check
+
+      - name: Build debug APK
+        working-directory: rustore-app/android
+        run: chmod +x gradlew && ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mani-magic-tryon-debug-apk
+          path: rustore-app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

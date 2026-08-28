@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d0d10">
+<title>Примерка маникюра — MANI Magic</title>
+<link rel="stylesheet" href="tryon.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="back" href="../index.html" aria-label="Назад">‹</a>
+  <div><h1>Примерка маникюра</h1><p>Фото обрабатывается на устройстве</p></div>
+</header>
+<main>
+  <section id="startCard" class="card start-card">
+    <div class="intro-icon">✦</div>
+    <h2>Посмотрите цвет на своих ногтях</h2>
+    <p>Сфотографируйте руку сверху при хорошем освещении. Пальцы лучше держать отдельно друг от друга.</p>
+    <div class="pick-row">
+      <label class="primary pick">Сделать фото<input id="cameraInput" type="file" accept="image/*" capture="environment"></label>
+      <label class="secondary pick">Выбрать из галереи<input id="galleryInput" type="file" accept="image/*"></label>
+    </div>
+    <p id="modelStatus" class="status">Подготавливаю распознавание…</p>
+  </section>
+
+  <section id="editor" class="editor hidden">
+    <div class="photo-card card">
+      <div id="canvasWrap" class="canvas-wrap">
+        <canvas id="resultCanvas"></canvas>
+        <div id="busy" class="busy hidden"><span></span><b>Распознаю ногти…</b></div>
+      </div>
+      <div class="compare-row">
+        <button id="compareBtn" class="small-btn" type="button">Удерживайте: до</button>
+        <button id="newPhotoBtn" class="small-btn" type="button">Другое фото</button>
+      </div>
+    </div>
+
+    <section class="card controls">
+      <div class="control-title"><h2>Цвет покрытия</h2><output id="colorCode">#D81B60</output></div>
+      <div id="palette" class="palette" aria-label="Готовые цвета"></div>
+      <label class="color-custom">Свой цвет <input id="colorInput" type="color" value="#d81b60"></label>
+      <label class="range-row"><span>Интенсивность</span><output id="opacityValue">72%</output><input id="opacity" type="range" min="0" max="100" value="72"></label>
+      <details class="advanced">
+        <summary>Настроить распознавание</summary>
+        <label class="range-row"><span>Порог маски</span><output id="thresholdValue">0.50</output><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.50"></label>
+        <label class="toggle-row"><span>Показать маску</span><input id="showMask" type="checkbox"></label>
+        <button id="recognizeBtn" class="secondary full" type="button">Распознать заново</button>
+      </details>
+      <div class="action-row">
+        <button id="saveBtn" class="primary" type="button">Сохранить результат</button>
+        <button id="shareBtn" class="secondary" type="button">Поделиться</button>
+      </div>
+      <p id="editorStatus" class="status" role="status"></p>
+    </section>
+  </section>
+</main>
+<div id="toast" class="toast hidden" role="status"></div>
+<script src="ort.min.js"></script>
+<script src="tryon.js"></script>
+</body>
+</html>
