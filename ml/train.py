@@ -13,6 +13,10 @@
   пересечение с маской и на пустой ответ реагирует сразу.
 * **Скипы берём по разрешению, а не по номеру слоя.** Индексы слоёв
   torchvision меняет между версиями, а разрешение — нет.
+* **Тёмный маникюр досоздаём из масок.** В наборе самый тёмный ноготь имеет
+  яркость 0.33, ниже 0.25 нет вовсе — и ровно на тёмном модель слепа. Маски
+  есть на все 52 фото, значит цвет внутри маски можно заменить, а маска
+  останется верной (`synth.py`). Разметка для этого не нужна.
 """
 import json
 import os
@@ -24,6 +28,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
 
+import synth
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIZE = 256
 VAL_N = 10          # отложенных картинок; на 52 больше отдавать жалко
@@ -34,6 +40,7 @@ SEED = 7
 
 torch.manual_seed(SEED)
 np.random.seed(SEED)
+RNG = np.random.default_rng(SEED)
 
 
 # --------------------------------------------------------------------- модель
@@ -99,6 +106,13 @@ class NailNet(nn.Module):
 def augment(x, y):
     """x: (B,3,H,W) float 0..1, y: (B,1,H,W) float 0/1."""
     B = x.shape[0]
+
+    # Сначала цвет лака, потом уже геометрия и свет: так перекрашенный ноготь
+    # проходит тот же поворот и ту же засветку, что и настоящий, и мягкий край
+    # маски пересемплируется вместе с картинкой.
+    x = torch.from_numpy(
+        synth.recolor_batch(x.permute(0, 2, 3, 1).numpy(), y[:, 0].numpy(), RNG)
+    ).permute(0, 3, 1, 2).contiguous()
     if torch.rand(1).item() < 0.5:
         x, y = torch.flip(x, [3]), torch.flip(y, [3])
     if torch.rand(1).item() < 0.3:
@@ -136,6 +150,18 @@ def dice_loss(logits, y, eps=1.0):
     return (1 - num / den).mean()
 
 
+def dark_val(X, Y, seed=SEED + 1):
+    """Отложенные фото, перекрашенные в тёмное — детерминированно, один раз.
+
+    Нужны потому, что в исходных отложенных тёмного нет совсем: по ним не
+    видно, закрылась дыра или нет. Фиксированное зерно — чтобы метрика между
+    прогонами сравнивалась, а не плавала вместе со случайным цветом.
+    """
+    rng = np.random.default_rng(seed)
+    Xd = synth.recolor_batch(X.permute(0, 2, 3, 1).numpy(), Y[:, 0].numpy(), rng, p=1.0)
+    return torch.from_numpy(Xd).permute(0, 3, 1, 2).contiguous()
+
+
 def iou(logits, y, t=0.5):
     p = (torch.sigmoid(logits) > t).float()
     inter = (p * y).sum(dim=(1, 2, 3))
@@ -151,7 +177,9 @@ def main():
     idx = torch.randperm(X.shape[0], generator=torch.Generator().manual_seed(SEED))
     val_i, tr_i = idx[:VAL_N], idx[VAL_N:]
     Xtr, Ytr, Xva, Yva = X[tr_i], Y[tr_i], X[val_i], Y[val_i]
-    print('обучающих %d, отложенных %d' % (len(tr_i), len(val_i)), flush=True)
+    Xvd = dark_val(Xva, Yva)
+    print('обучающих %d, отложенных %d (+ те же %d в тёмном)'
+          % (len(tr_i), len(val_i), len(val_i)), flush=True)
 
     net = NailNet()
     params = sum(p.numel() for p in net.parameters())
@@ -163,7 +191,7 @@ def main():
     pos_w = torch.tensor([(1 - Ytr.mean()) / Ytr.mean().clamp(min=1e-6)])
     bce = nn.BCEWithLogitsLoss(pos_weight=pos_w.clamp(max=20))
 
-    best, best_ep, hist = 0.0, -1, []
+    best, best_dark, best_ep, hist = 0.0, 0.0, -1, []
     t0 = time.time()
     for ep in range(EPOCHS):
         net.train()
@@ -184,18 +212,25 @@ def main():
             net.eval()
             with torch.no_grad():
                 v = iou(net(Xva), Yva)
-            hist.append({'эпоха': ep + 1, 'потери': round(tot / len(perm), 4), 'IoU': round(v, 4)})
-            print('эпоха %3d | потери %.4f | IoU на отложенных %.3f | %.0f с'
-                  % (ep + 1, tot / len(perm), v, time.time() - t0), flush=True)
-            if v > best:
-                best, best_ep = v, ep + 1
+                vd = iou(net(Xvd), Yva)
+            # Лучшую эпоху выбираем по обеим сразу. По одной светлой нельзя:
+            # она не заметит, что тёмное так и не нашлось.
+            score = (v + vd) / 2
+            hist.append({'эпоха': ep + 1, 'потери': round(tot / len(perm), 4),
+                         'IoU': round(v, 4), 'IoU тёмный': round(vd, 4)})
+            print('эпоха %3d | потери %.4f | IoU %.3f | IoU тёмный %.3f | %.0f с'
+                  % (ep + 1, tot / len(perm), v, vd, time.time() - t0), flush=True)
+            if score > (best + best_dark) / 2:
+                best, best_dark, best_ep = v, vd, ep + 1
                 torch.save(net.state_dict(), os.path.join(HERE, 'best.pt'))
 
-    json.dump({'лучший IoU': round(best, 4), 'на эпохе': best_ep,
+    json.dump({'лучший IoU': round(best, 4), 'IoU тёмный': round(best_dark, 4),
+               'на эпохе': best_ep,
                'параметров, млн': round(params / 1e6, 2),
                'эпох': EPOCHS, 'история': hist},
               open(os.path.join(HERE, 'metrics.json'), 'w'), ensure_ascii=False, indent=2)
-    print('лучший IoU %.3f на эпохе %d' % (best, best_ep), flush=True)
+    print('лучший IoU %.3f (тёмный %.3f) на эпохе %d' % (best, best_dark, best_ep),
+          flush=True)
 
 
 if __name__ == '__main__':
