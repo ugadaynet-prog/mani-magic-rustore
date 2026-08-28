@@ -3,20 +3,43 @@
   const $ = id => document.getElementById(id);
   const ui = { start:$('startCard'), editor:$('editor'), camera:$('cameraInput'), gallery:$('galleryInput'), model:$('modelStatus'), canvas:$('resultCanvas'), busy:$('busy'), color:$('colorInput'), code:$('colorCode'), opacity:$('opacity'), opacityValue:$('opacityValue'), threshold:$('threshold'), thresholdValue:$('thresholdValue'), showMask:$('showMask'), status:$('editorStatus'), toast:$('toast'), compare:$('compareBtn'), palette:$('palette') };
   const colors = ['#F5D0C5','#D98A91','#F04479','#D81B60','#A81748','#8B2F67','#7446B8','#335CC7','#1597A5','#3BAA70','#D6A522','#17171B'];
-  let session, sourceBitmap, sourceImage, probabilities, geometry, showingOriginal = false;
+  let session, modelPromise, sourceBitmap, sourceImage, probabilities, geometry, showingOriginal = false;
+  const LOAD_TIMEOUT_MS = 30000;
+  const RUN_TIMEOUT_MS = 20000;
 
   function setStatus(el, text, kind=''){ el.textContent=text; el.className='status '+kind; }
+  function withTimeout(promise, ms, message){
+    let timer;
+    return Promise.race([promise, new Promise((_, reject) => { timer=setTimeout(() => reject(new Error(message)), ms); })]).finally(() => clearTimeout(timer));
+  }
   function toast(text){ ui.toast.textContent=text; ui.toast.classList.remove('hidden'); clearTimeout(toast.timer); toast.timer=setTimeout(()=>ui.toast.classList.add('hidden'),2400); }
   function selectedColor(hex){ ui.color.value=hex; ui.code.textContent=hex.toUpperCase(); document.querySelectorAll('.swatch').forEach(x=>x.classList.toggle('active',x.dataset.color.toLowerCase()===hex.toLowerCase())); render(); }
   colors.forEach((color,i)=>{ const b=document.createElement('button'); b.type='button'; b.className='swatch'+(i===3?' active':''); b.style.background=color; b.dataset.color=color; b.setAttribute('aria-label','Цвет '+color); b.onclick=()=>selectedColor(color); ui.palette.appendChild(b); });
 
   async function initModel(){
-    try {
-      if (!window.ort) throw new Error('модуль ONNX Runtime не загрузился');
-      ort.env.wasm.wasmPaths='./'; ort.env.wasm.numThreads=1; ort.env.wasm.simd=true;
-      session=await ort.InferenceSession.create('./nail-unet.onnx',{executionProviders:['wasm'],graphOptimizationLevel:'all'});
-      setStatus(ui.model,'Распознавание готово','ok');
-    } catch(e){ console.error(e); setStatus(ui.model,'Не удалось загрузить модель: '+e.message,'error'); }
+    if(session) return session;
+    if(modelPromise) return modelPromise;
+    modelPromise=(async()=>{
+      try {
+        if (!window.ort) throw new Error('модуль ONNX Runtime не загрузился');
+        // Один поток исключает зависание на WebView без cross-origin isolation.
+        // SIMD нужен этому комплекту ONNX Runtime; Android System WebView его
+        // поддерживает на актуальных устройствах.
+        ort.env.wasm.wasmPaths='./'; ort.env.wasm.numThreads=1; ort.env.wasm.simd=true;
+        session=await withTimeout(
+          ort.InferenceSession.create('./nail-unet.onnx',{executionProviders:['wasm'],graphOptimizationLevel:'basic'}),
+          LOAD_TIMEOUT_MS,
+          'загрузка модели заняла больше 30 секунд'
+        );
+        setStatus(ui.model,'Распознавание готово','ok');
+        return session;
+      } catch(e){
+        console.error(e); session=undefined;
+        setStatus(ui.model,'Не удалось загрузить модель: '+e.message,'error');
+        throw e;
+      } finally { modelPromise=undefined; }
+    })();
+    return modelPromise;
   }
 
   function decodeWithImage(file){
@@ -59,15 +82,25 @@
     geometry={w,h,ox,oy,dw,dh}; return new ort.Tensor('float32',a,[1,3,256,256]);
   }
   async function recognize(){
-    if(!session){ setStatus(ui.status,'Модель ещё загружается. Подождите несколько секунд.','error'); await initModel(); if(!session)return; }
-    ui.busy.classList.remove('hidden'); setStatus(ui.status,'');
+    ui.busy.classList.remove('hidden');
     try {
-      await new Promise(requestAnimationFrame); const started=performance.now();
-      const result=await session.run({[session.inputNames[0]]:inputTensor()}),logits=result[session.outputNames[0]].data;
+      if(!session){
+        setStatus(ui.status,'Подготавливаю распознавание…');
+        await initModel();
+      }
+      await new Promise(requestAnimationFrame);
+      const started=performance.now();
+      const result=await withTimeout(
+        session.run({[session.inputNames[0]]:inputTensor()}),
+        RUN_TIMEOUT_MS,
+        'распознавание не ответило за 20 секунд'
+      ), logits=result[session.outputNames[0]].data;
       probabilities=new Float32Array(logits.length); for(let i=0;i<logits.length;i++)probabilities[i]=1/(1+Math.exp(-logits[i]));
       render(); setStatus(ui.status,'Готово за '+Math.round(performance.now()-started)+' мс','ok');
-    } catch(e){console.error(e);setStatus(ui.status,'Ошибка распознавания: '+e.message,'error');}
-    finally{ui.busy.classList.add('hidden');}
+    } catch(e){
+      console.error(e);
+      setStatus(ui.status,'Не удалось распознать ногти: '+e.message+'. Попробуйте другое фото или перезапустите экран.','error');
+    } finally{ui.busy.classList.add('hidden');}
   }
   function maskCanvas(){
     const t=+ui.threshold.value,net=document.createElement('canvas');net.width=net.height=256;const x=net.getContext('2d'),im=x.createImageData(256,256);
