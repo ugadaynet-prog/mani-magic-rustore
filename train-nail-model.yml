@@ -1,0 +1,146 @@
+name: Train Nail Segmentation Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: 'Number of training epochs'
+        required: false
+        default: '40'
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install torch torchvision onnx onnxruntime pillow numpy --index-url https://download.pytorch.org/whl/cpu
+          pip install torch torchvision onnx onnxruntime pillow numpy
+
+      - name: Download dataset
+        run: |
+          wget -q https://github.com/vpapenko/nails-segmentation-dataset/raw/master/nails_segmentation.zip
+          unzip -q nails_segmentation.zip -d raw_data
+          ls raw_data/images | wc -l
+          ls raw_data/labels | wc -l
+
+      - name: Prepare dataset (resize + binarize)
+        run: |
+          python3 -c "
+          from PIL import Image
+          import numpy as np
+          import os
+          os.makedirs('dataset/images', exist_ok=True)
+          os.makedirs('dataset/masks', exist_ok=True)
+          count = 0
+          for fname in sorted(os.listdir('raw_data/images')):
+              if not fname.endswith('.jpg'): continue
+              mask_path = f'raw_data/labels/{fname}'
+              if not os.path.exists(mask_path): continue
+              img = Image.open(f'raw_data/images/{fname}').convert('RGB').resize((256, 256), Image.BILINEAR)
+              mask = Image.open(mask_path).convert('L').resize((256, 256), Image.NEAREST)
+              mask_arr = np.where(np.array(mask) > 127, 255, 0).astype(np.uint8)
+              img.save(f'dataset/images/{count:04d}.jpg', quality=95)
+              Image.fromarray(mask_arr, mode='L').save(f'dataset/masks/{count:04d}.png')
+              count += 1
+          print(f'Prepared: {count} images')
+          "
+
+      - name: Augment dataset (x9 = ~468 images)
+        run: |
+          python3 -c "
+          from PIL import Image, ImageEnhance
+          import numpy as np, os, random
+          random.seed(42)
+          os.makedirs('dataset_aug/images', exist_ok=True)
+          os.makedirs('dataset_aug/masks', exist_ok=True)
+          augs = [
+              ('orig', lambda i,m: (i,m)),
+              ('rot90', lambda i,m: (i.rotate(90), m.rotate(90))),
+              ('rot180', lambda i,m: (i.rotate(180), m.rotate(180))),
+              ('rot270', lambda i,m: (i.rotate(270), m.rotate(270))),
+              ('flip_h', lambda i,m: (i.transpose(Image.FLIP_LEFT_RIGHT), m.transpose(Image.FLIP_LEFT_RIGHT))),
+              ('flip_v', lambda i,m: (i.transpose(Image.FLIP_TOP_BOTTOM), m.transpose(Image.FLIP_TOP_BOTTOM))),
+              ('bright', lambda i,m: (ImageEnhance.Brightness(i).enhance(1.3), m)),
+              ('dark', lambda i,m: (ImageEnhance.Brightness(i).enhance(0.7), m)),
+              ('contrast', lambda i,m: (ImageEnhance.Contrast(i).enhance(1.4), m)),
+          ]
+          count = 0
+          for fname in sorted(os.listdir('dataset/images')):
+              img = Image.open(f'dataset/images/{fname}').convert('RGB')
+              mask = Image.open(f'dataset/masks/{fname.replace(\".jpg\",\".png\")}').convert('L')
+              for name, fn in augs:
+                  ai, am = fn(img, mask)
+                  ai.save(f'dataset_aug/images/{count:05d}.jpg', quality=95)
+                  am.save(f'dataset_aug/masks/{count:05d}.png')
+                  count += 1
+          print(f'Augmented: {count} images')
+          "
+
+      - name: Upload dataset artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nail-dataset-augmented
+          path: dataset_aug/
+          retention-days: 7
+
+      - name: Train U-Net model
+        run: python3 train_nail_unet.py
+
+      - name: Verify ONNX model
+        run: |
+          python3 -c "
+          import onnxruntime as ort
+          import numpy as np
+          sess = ort.InferenceSession('nail-unet.onnx')
+          dummy = np.random.randn(1,3,256,256).astype(np.float32)
+          out = sess.run(None, {'input': dummy})[0]
+          print(f'ONNX model OK: input {dummy.shape} -> output {out.shape}')
+          print(f'Output range: [{out.min():.4f}, {out.max():.4f}]')
+          "
+
+      - name: Compute SHA256 of model
+        id: sha
+        run: |
+          sha=$(sha256sum nail-unet.onnx | awk '{print $1}')
+          echo "sha=$sha" >> $GITHUB_OUTPUT
+          echo "Model SHA256: $sha"
+
+      - name: Upload trained model
+        uses: actions/upload-artifact@v4
+        with:
+          name: nail-unet-onnx-model
+          path: nail-unet.onnx
+          retention-days: 30
+
+      - name: Upload training script
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-script
+          path: train_nail_unet.py
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "### Training Complete! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dataset:** 52 original images + 9x augmentation = 468 images" >> $GITHUB_STEP_SUMMARY
+          echo "- **Architecture:** U-Net (encoder: 32→64→128→256→512, decoder mirror)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Input:** 1x3x256x256 float32" >> $GITHUB_STEP_SUMMARY
+          echo "- **Output:** 1x1x256x256 float32 (logits)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Loss:** BCEWithLogitsLoss" >> $GITHUB_STEP_SUMMARY
+          echo "- **Optimizer:** Adam, lr=1e-3" >> $GITHUB_STEP_SUMMARY
+          echo "- **Epochs:** 40" >> $GITHUB_STEP_SUMMARY
+          echo "- **Model file:** nail-unet.onnx" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA256:** ${{ steps.sha.outputs.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download the model from the artifacts section below." >> $GITHUB_STEP_SUMMARY
