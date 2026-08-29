@@ -18,11 +18,29 @@
 
   // Проверяем доступность нативного плагина при загрузке экрана.
   function checkNativePlugin(){
-    if (!NailSeg) {
-      setStatus(ui.model, 'Нативное распознавание недоступно в этой сборке', 'error');
+    console.log('checkNativePlugin: window.Capacitor =', !!window.Capacitor);
+    console.log('checkNativePlugin: window.Capacitor.Plugins =', window.Capacitor && window.Capacitor.Plugins);
+    console.log('checkNativePlugin: NailSeg =', NailSeg);
+    console.log('checkNativePlugin: NailSeg.segment =', NailSeg && typeof NailSeg.segment);
+    
+    if (!window.Capacitor) {
+      setStatus(ui.model, 'DIAG: window.Capacitor отсутствует — Capacitor не инициализирован', 'error');
       return false;
     }
-    setStatus(ui.model, 'Распознавание готово (нативный плагин)', 'ok');
+    if (!window.Capacitor.Plugins) {
+      setStatus(ui.model, 'DIAG: window.Capacitor.Plugins отсутствует', 'error');
+      return false;
+    }
+    if (!NailSeg) {
+      const available = Object.keys(window.Capacitor.Plugins);
+      setStatus(ui.model, `DIAG: NailSegmentation не найден. Доступные плагины: [${available.join(', ')}]`, 'error');
+      return false;
+    }
+    if (typeof NailSeg.segment !== 'function') {
+      setStatus(ui.model, `DIAG: NailSeg.segment не функция (typeof=${typeof NailSeg.segment})`, 'error');
+      return false;
+    }
+    setStatus(ui.model, 'Плагин NailSegmentation готов ✓', 'ok');
     return true;
   }
 
@@ -100,8 +118,15 @@
       render();
       setStatus(ui.status, `Готово за ${result.elapsedMs || Math.round(performance.now()-started)} мс`, 'ok');
     } catch(e){
-      console.error(e);
-      setStatus(ui.status, 'Не удалось распознать ногти: ' + (e.message || e) + '. Попробуйте другое фото или перезапустите экран.', 'error');
+      console.error('recognize() error:', e);
+      // Диагностический вывод: покажем тип ошибки, сообщение и stack
+      const errType = e && e.constructor ? e.constructor.name : typeof e;
+      const errMsg = e && e.message ? e.message : String(e);
+      const stack = e && e.stack ? e.stack.split('\n').slice(0, 3).join(' | ') : '';
+      setStatus(ui.status, `[${errType}] ${errMsg}${stack ? ' || '+stack : ''}`, 'error');
+      // Также покажем состояние плагина
+      const pluginState = NailSeg ? 'плагин есть' : 'плагин ОТСУТСТВУЕТ';
+      setStatus(ui.model, `Диагностика: ${pluginState}. Ошибка: ${errType}: ${errMsg.substring(0, 120)}`, 'error');
     } finally { ui.busy.classList.add('hidden'); }
   }
 
