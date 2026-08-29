@@ -35,16 +35,10 @@ function copyDir(src, dest) {
 copyDir(SRC, DEST);
 if (fs.existsSync(ADDONS)) copyDir(ADDONS, DEST);
 
-// ONNX Runtime 1.16 использует обычные JS/WASM-файлы и не делает dynamic import
-// .mjs. Это необходимо для Android WebView в Capacitor: версия 1.22 загружает
-// JSEP-модуль .mjs, который в данной конфигурации WebView не открывается.
-const ortDist = path.join(__dirname, 'node_modules', 'onnxruntime-web', 'dist');
-const tryOnDest = path.join(DEST, 'tryon');
-for (const name of ['ort.min.js', 'ort-wasm-simd-threaded.wasm', 'ort-wasm-simd.wasm']) {
-  const from = path.join(ortDist, name);
-  if (!fs.existsSync(from)) throw new Error(`Не найден ${from}; выполните npm ci`);
-  fs.copyFileSync(from, path.join(tryOnDest, name));
-}
+// ONNX Runtime Web больше не нужен: распознавание ногтей теперь выполняет
+// нативный Capacitor-плагин NailSegmentation (Kotlin + onnxruntime-android),
+// который загружает модель из android/app/src/main/assets/models/nail-unet.onnx
+// и возвращает маску 256×256 в JavaScript. WebView не трогает ни WASM, ни .mjs.
 
 // Вход в примерку есть только в Android-сборке: сайт остаётся лёгким и не
 // скачивает ONNX Runtime с моделью. Добавляем пункт первым в меню «Ещё».
