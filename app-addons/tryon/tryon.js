@@ -3,43 +3,27 @@
   const $ = id => document.getElementById(id);
   const ui = { start:$('startCard'), editor:$('editor'), camera:$('cameraInput'), gallery:$('galleryInput'), model:$('modelStatus'), canvas:$('resultCanvas'), busy:$('busy'), color:$('colorInput'), code:$('colorCode'), opacity:$('opacity'), opacityValue:$('opacityValue'), threshold:$('threshold'), thresholdValue:$('thresholdValue'), showMask:$('showMask'), status:$('editorStatus'), toast:$('toast'), compare:$('compareBtn'), palette:$('palette') };
   const colors = ['#F5D0C5','#D98A91','#F04479','#D81B60','#A81748','#8B2F67','#7446B8','#335CC7','#1597A5','#3BAA70','#D6A522','#17171B'];
-  let session, modelPromise, sourceBitmap, sourceImage, probabilities, geometry, showingOriginal = false;
-  const LOAD_TIMEOUT_MS = 30000;
-  const RUN_TIMEOUT_MS = 20000;
+  let sourceBitmap, sourceImage, probabilities, geometry, showingOriginal = false;
 
-  function setStatus(el, text, kind=''){ el.textContent=text; el.className='status '+kind; }
-  function withTimeout(promise, ms, message){
-    let timer;
-    return Promise.race([promise, new Promise((_, reject) => { timer=setTimeout(() => reject(new Error(message)), ms); })]).finally(() => clearTimeout(timer));
-  }
+  // Нативный плагин NailSegmentation (Kotlin + onnxruntime-android).
+  // В WebView недоступен, поэтому получаем прокси через Capacitor.
+  const NailSeg = window.Capacitor && window.Capacitor.Plugins
+    ? window.Capacitor.Plugins.NailSegmentation
+    : null;
+
   function toast(text){ ui.toast.textContent=text; ui.toast.classList.remove('hidden'); clearTimeout(toast.timer); toast.timer=setTimeout(()=>ui.toast.classList.add('hidden'),2400); }
+  function setStatus(el, text, kind=''){ el.textContent=text; el.className='status '+kind; }
   function selectedColor(hex){ ui.color.value=hex; ui.code.textContent=hex.toUpperCase(); document.querySelectorAll('.swatch').forEach(x=>x.classList.toggle('active',x.dataset.color.toLowerCase()===hex.toLowerCase())); render(); }
   colors.forEach((color,i)=>{ const b=document.createElement('button'); b.type='button'; b.className='swatch'+(i===3?' active':''); b.style.background=color; b.dataset.color=color; b.setAttribute('aria-label','Цвет '+color); b.onclick=()=>selectedColor(color); ui.palette.appendChild(b); });
 
-  async function initModel(){
-    if(session) return session;
-    if(modelPromise) return modelPromise;
-    modelPromise=(async()=>{
-      try {
-        if (!window.ort) throw new Error('модуль ONNX Runtime не загрузился');
-        // Один поток исключает зависание на WebView без cross-origin isolation.
-        // SIMD нужен этому комплекту ONNX Runtime; Android System WebView его
-        // поддерживает на актуальных устройствах.
-        ort.env.wasm.wasmPaths='./'; ort.env.wasm.numThreads=1; ort.env.wasm.simd=true;
-        session=await withTimeout(
-          ort.InferenceSession.create('./nail-unet.onnx',{executionProviders:['wasm'],graphOptimizationLevel:'basic'}),
-          LOAD_TIMEOUT_MS,
-          'загрузка модели заняла больше 30 секунд'
-        );
-        setStatus(ui.model,'Распознавание готово','ok');
-        return session;
-      } catch(e){
-        console.error(e); session=undefined;
-        setStatus(ui.model,'Не удалось загрузить модель: '+e.message,'error');
-        throw e;
-      } finally { modelPromise=undefined; }
-    })();
-    return modelPromise;
+  // Проверяем доступность нативного плагина при загрузке экрана.
+  function checkNativePlugin(){
+    if (!NailSeg) {
+      setStatus(ui.model, 'Нативное распознавание недоступно в этой сборке', 'error');
+      return false;
+    }
+    setStatus(ui.model, 'Распознавание готово (нативный плагин)', 'ok');
+    return true;
   }
 
   function decodeWithImage(file){
@@ -56,8 +40,23 @@
     }
     return decodeWithImage(file);
   }
+
+  // Конвертирует ImageBitmap/Image/Canvas в JPEG dataURL для передачи в нативный плагин.
+  function toJpegDataUrl(bitmap){
+    const max=1800, scale=Math.min(1,max/Math.max(bitmap.width,bitmap.height));
+    const c=document.createElement('canvas');
+    c.width=Math.max(1,Math.round(bitmap.width*scale));
+    c.height=Math.max(1,Math.round(bitmap.height*scale));
+    c.getContext('2d').drawImage(bitmap,0,0,c.width,c.height);
+    return { dataUrl: c.toDataURL('image/jpeg', 0.9), w: c.width, h: c.height };
+  }
+
   async function chooseFile(file){
     if(!file)return;
+    if(!checkNativePlugin()){
+      toast('Нативный плагин недоступен');
+      return;
+    }
     try {
       setStatus(ui.model,'Открываю фотографию…');
       if(sourceBitmap&&sourceBitmap.close)sourceBitmap.close();
@@ -74,34 +73,57 @@
     const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(bitmap.width*scale)); c.height=Math.max(1,Math.round(bitmap.height*scale));
     c.getContext('2d').drawImage(bitmap,0,0,c.width,c.height); return c;
   }
-  function inputTensor(){
-    const w=sourceImage.width,h=sourceImage.height,side=Math.max(w,h),scale=256/side,dw=w*scale,dh=h*scale,ox=(256-dw)/2,oy=(256-dh)/2;
-    const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d',{willReadFrequently:true});x.fillStyle='#000';x.fillRect(0,0,256,256);x.drawImage(sourceImage,ox,oy,dw,dh);
-    const p=x.getImageData(0,0,256,256).data,a=new Float32Array(3*256*256),n=256*256;
-    for(let i=0;i<n;i++){a[i]=p[4*i]/255;a[n+i]=p[4*i+1]/255;a[2*n+i]=p[4*i+2]/255;}
-    geometry={w,h,ox,oy,dw,dh}; return new ort.Tensor('float32',a,[1,3,256,256]);
+
+  // Вычисляет геометрию letterbox (та же, что в нативном плагине).
+  function computeGeometry(w,h){
+    const side=Math.max(w,h), scale=256/side;
+    return { w, h, dw:w*scale, dh:h*scale, ox:(256-w*scale)/2, oy:(256-h*scale)/2 };
   }
+
   async function recognize(){
     ui.busy.classList.remove('hidden');
     try {
-      if(!session){
-        setStatus(ui.status,'Подготавливаю распознавание…');
-        await initModel();
-      }
-      await new Promise(requestAnimationFrame);
+      setStatus(ui.status,'Распознаю ногти…');
+      await new Promise(r=>requestAnimationFrame(r));
+
       const started=performance.now();
-      const result=await withTimeout(
-        session.run({[session.inputNames[0]]:inputTensor()}),
-        RUN_TIMEOUT_MS,
-        'распознавание не ответило за 20 секунд'
-      ), logits=result[session.outputNames[0]].data;
-      probabilities=new Float32Array(logits.length); for(let i=0;i<logits.length;i++)probabilities[i]=1/(1+Math.exp(-logits[i]));
-      render(); setStatus(ui.status,'Готово за '+Math.round(performance.now()-started)+' мс','ok');
+      // Готовим JPEG для нативного плагина.
+      const { dataUrl, w, h } = toJpegDataUrl(sourceImage);
+      geometry = computeGeometry(w, h);
+
+      // Вызов нативного плагина: передаём JPEG dataURL, получаем PNG-маску 256×256.
+      const result = await NailSeg.segment({ image: dataUrl });
+      const maskDataUrl = result.mask;
+
+      // Декодируем PNG-маску в probabilities (Float32Array 256×256).
+      probabilities = await decodeMaskToProbabilities(maskDataUrl);
+      render();
+      setStatus(ui.status, `Готово за ${result.elapsedMs || Math.round(performance.now()-started)} мс`, 'ok');
     } catch(e){
       console.error(e);
-      setStatus(ui.status,'Не удалось распознать ногти: '+e.message+'. Попробуйте другое фото или перезапустите экран.','error');
-    } finally{ui.busy.classList.add('hidden');}
+      setStatus(ui.status, 'Не удалось распознать ногти: ' + (e.message || e) + '. Попробуйте другое фото или перезапустите экран.', 'error');
+    } finally { ui.busy.classList.add('hidden'); }
   }
+
+  // Загружает PNG-маску (grayscale 256×256) и возвращает массив вероятностей 0..1.
+  function decodeMaskToProbabilities(maskDataUrl){
+    return new Promise((resolve,reject)=>{
+      const img=new Image();
+      img.onload=()=>{
+        const c=document.createElement('canvas');
+        c.width=c.height=256;
+        const x=c.getContext('2d',{willReadFrequently:true});
+        x.drawImage(img,0,0,256,256);
+        const p=x.getImageData(0,0,256,256).data;
+        const probs=new Float32Array(256*256);
+        for(let i=0;i<probs.length;i++) probs[i]=p[4*i]/255;
+        resolve(probs);
+      };
+      img.onerror=()=>reject(new Error('не удалось декодировать маску'));
+      img.src=maskDataUrl;
+    });
+  }
+
   function maskCanvas(){
     const t=+ui.threshold.value,net=document.createElement('canvas');net.width=net.height=256;const x=net.getContext('2d'),im=x.createImageData(256,256);
     for(let i=0;i<probabilities.length;i++){const v=probabilities[i]>t?255:0;im.data[4*i]=im.data[4*i+1]=im.data[4*i+2]=v;im.data[4*i+3]=255;}x.putImageData(im,0,0);
@@ -113,21 +135,18 @@
     dst.data.set(src.data); for(let i=0;i<w*h;i++){const a=(m[4*i]/255)*alpha;if(a<.01)continue;const q=4*i;if(debug){dst.data[q]=255;dst.data[q+1]=45;dst.data[q+2]=130;continue;}const lum=.299*src.data[q]+.587*src.data[q+1]+.114*src.data[q+2],k=Math.max(.38,Math.min(1.65,lum/(targetLum||1)));dst.data[q]=src.data[q]*(1-a)+Math.min(255,r*k)*a;dst.data[q+1]=src.data[q+1]*(1-a)+Math.min(255,g*k)*a;dst.data[q+2]=src.data[q+2]*(1-a)+Math.min(255,b*k)*a;}
     out.putImageData(dst,0,0);
   }
-  function resultDataUrl(){showingOriginal=false;render();return ui.canvas.toDataURL('image/jpeg',.94);}
-  async function saveOrShare(share){
-    if(!probabilities)return; const dataUrl=resultDataUrl(),base64=dataUrl.split(',')[1],name='MANI-Magic-'+Date.now()+'.jpg';
-    try{
-      const cap=window.Capacitor&&window.Capacitor.Plugins,fs=cap&&cap.Filesystem,sh=cap&&cap.Share,media=cap&&cap.TryOnMedia;
-      if(!share&&media){await media.saveImage({data:base64,name});toast('Сохранено в «Фото» → MANI Magic');return;}
-      if(fs){
-        const saved=await fs.writeFile({path:name,data:base64,directory:'CACHE'});
-        if(sh){await sh.share({title:'Мой маникюр MANI Magic',text:'Примерка цвета в MANI Magic',url:saved.uri,dialogTitle:'Поделиться результатом'});return;}
-      }
-      const a=document.createElement('a');a.href=dataUrl;a.download=name;document.body.appendChild(a);a.click();a.remove();toast('Результат сохранён');
-    }catch(e){if(String(e).toLowerCase().includes('cancel'))return;console.error(e);setStatus(ui.status,'Не удалось сохранить: '+e.message,'error');}
-  }
-  ui.color.oninput=()=>selectedColor(ui.color.value);ui.opacity.oninput=()=>{ui.opacityValue.textContent=ui.opacity.value+'%';render();};ui.threshold.oninput=()=>{ui.thresholdValue.textContent=(+ui.threshold.value).toFixed(2);render();};ui.showMask.onchange=render;
-  $('recognizeBtn').onclick=recognize;$('newPhotoBtn').onclick=()=>ui.gallery.click();$('saveBtn').onclick=()=>saveOrShare(false);$('shareBtn').onclick=()=>saveOrShare(true);
-  const originalOn=()=>{showingOriginal=true;render();},originalOff=()=>{showingOriginal=false;render();};['pointerdown','touchstart'].forEach(e=>ui.compare.addEventListener(e,originalOn,{passive:true}));['pointerup','pointercancel','pointerleave','touchend'].forEach(e=>ui.compare.addEventListener(e,originalOff,{passive:true}));
-  initModel();
+  function resultDataUrl(){showingOriginal=false;render();return ui.canvas.toDataURL('image/jpeg',.92);}
+
+  ui.color.addEventListener('input',()=>{ui.code.textContent=ui.color.value.toUpperCase();render();});
+  ui.opacity.addEventListener('input',()=>{ui.opacityValue.textContent=ui.opacity.value+'%';render();});
+  ui.threshold.addEventListener('input',()=>{ui.thresholdValue.textContent=Math.round(ui.threshold.value*100)+'%';render();});
+  ui.showMask.addEventListener('change',render);
+  ui.compare.addEventListener('mousedown',()=>{showingOriginal=true;render();});
+  ui.compare.addEventListener('mouseup',()=>{showingOriginal=false;render();});
+  ui.compare.addEventListener('mouseleave',()=>{showingOriginal=false;render();});
+  ui.compare.addEventListener('touchstart',e=>{e.preventDefault();showingOriginal=true;render();},{passive:false});
+  ui.compare.addEventListener('touchend',()=>{showingOriginal=false;render();});
+
+  document.addEventListener('DOMContentLoaded', checkNativePlugin);
+  if(document.readyState!=='loading') checkNativePlugin();
 })();
