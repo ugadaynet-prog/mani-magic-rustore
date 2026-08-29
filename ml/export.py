@@ -28,7 +28,8 @@ def main():
         # Батч динамический: в браузере иногда удобнее прогнать пачку кропов
         # за один вызов, а размер картинки у нас всегда 256×256.
         dynamic_axes={'image': {0: 'batch'}, 'mask': {0: 'batch'}},
-        opset_version=17,
+        opset_version=13,   # opset 13 — для onnxruntime-android 1.20.0
+        dynamo=False,        # legacy exporter — совместим с onnxruntime-android
     )
 
     # Новый экспортёр torch кладёт веса ОТДЕЛЬНЫМ файлом .onnx.data, а в самом
