@@ -66,7 +66,6 @@ class NailSegmentationPlugin : Plugin() {
         }
 
         // Запускаем в фоновом потоке — ONNX блокирующий.
-        bridge.executeJavaScript("")  // убеждаемся что мост жив (нет-оп)
         Thread {
             try {
                 val started = System.currentTimeMillis()
