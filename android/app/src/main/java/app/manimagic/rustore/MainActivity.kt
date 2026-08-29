@@ -11,6 +11,7 @@ class MainActivity : BridgeActivity() {
         registerPlugin(RuStoreBillingPlugin::class.java)
         registerPlugin(InsetsPlugin::class.java)
         registerPlugin(TryOnMediaPlugin::class.java)
+        registerPlugin(NailSegmentationPlugin::class.java)
         super.onCreate(savedInstanceState)
 
         // targetSdk 36 включает edge-to-edge принудительно, отказаться нельзя:
