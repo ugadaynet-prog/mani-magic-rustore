@@ -1,15 +1,18 @@
 """
-Prepares the merged+augmented dataset for training.
-Reads from dataset_aug/ (created by prepare_dataset.py + augment_dataset.py)
-and produces data/prepared.npz with X (images) and Y (binary masks) at 256x256.
+Prepares data for training.
+This is the entry point called by the CI workflow.
 
-Falls back to the original data/nails.zip if dataset_aug/ doesn't exist.
+It first downloads and merges all available datasets (prepare_dataset.py),
+then augments them (augment_dataset.py), and finally packs them into
+data/prepared.npz for train.py.
+
+Falls back to data/nails.zip if the download scripts are not available.
 """
 import io
 import json
 import os
 import zipfile
-import shutil
+import subprocess
 
 import numpy as np
 from PIL import Image
@@ -49,7 +52,6 @@ def load_from_augmented():
             continue
         im = Image.open(os.path.join(img_dir, fname)).convert('RGB')
         mk = Image.open(mask_path).convert('L')
-        # Already 256x256 from augmentation, but ensure
         if im.size != (SIZE, SIZE):
             im = im.resize((SIZE, SIZE), Image.BILINEAR)
         if mk.size != (SIZE, SIZE):
@@ -82,13 +84,25 @@ def load_from_zip(zip_path):
 
 
 def main():
-    # Try augmented dataset first
+    # Step 1: Download and merge all datasets
+    prepare_ds = os.path.join(HERE, 'prepare_dataset.py')
+    if os.path.exists(prepare_ds):
+        print('=== Downloading and merging datasets ===')
+        subprocess.run(['python', prepare_ds], check=True, cwd=HERE)
+
+    # Step 2: Augment
+    augment_ds = os.path.join(HERE, 'augment_dataset.py')
+    if os.path.exists(augment_ds):
+        print('=== Augmenting dataset ===')
+        subprocess.run(['python', augment_ds], check=True, cwd=HERE)
+
+    # Step 3: Load and pack into prepared.npz
     result = load_from_augmented()
     if result is None:
         print('dataset_aug/ not found, falling back to data/nails.zip')
         zip_path = os.path.join(HERE, 'data', 'nails.zip')
         if not os.path.exists(zip_path):
-            raise SystemExit('No dataset found. Run prepare_dataset.py and augment_dataset.py first.')
+            raise SystemExit('No dataset found.')
         result = load_from_zip(zip_path)
 
     xs, ys, names = result
