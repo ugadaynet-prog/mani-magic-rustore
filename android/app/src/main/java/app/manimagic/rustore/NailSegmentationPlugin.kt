@@ -95,15 +95,20 @@ class NailSegmentationPlugin : Plugin() {
                 val outputName = session.outputNames.iterator().next()
 
                 // Модель возвращает 4D тензор float[1][1][256][256].
-                // Приводим к Array<Array<Array<FloatArray>>> и берём logits[0][0][0] → FloatArray(65536).
+                // "Разворачиваем" его в плоский FloatArray длиной 256*256 = 65536.
                 @Suppress("UNCHECKED_CAST")
                 val logits4d = (results[outputName].get().value as Array<Array<Array<FloatArray>>>)
+                val logits2d = logits4d[0][0]                          // float[256][256]
+                val flatLogits = FloatArray(INPUT_SIZE * INPUT_SIZE)   // 65536
+                for (row in 0 until INPUT_SIZE) {
+                    System.arraycopy(logits2d[row], 0, flatLogits, row * INPUT_SIZE, INPUT_SIZE)
+                }
 
                 inputTensor.close()
                 results.close()
 
                 // 5. Сигмоида → grayscale bitmap 256×256
-                val maskBitmap = logitsToBitmap(logits4d[0][0][0])
+                val maskBitmap = logitsToBitmap(flatLogits)
 
                 // 6. Кодируем PNG в base64
                 val pngOut = ByteArrayOutputStream()
