@@ -50,9 +50,17 @@ jobs:
           node sync-www.js
           npx cap sync android
 
+      - name: Copy model to Android assets
+        working-directory: rustore-app
+        run: |
+          mkdir -p android/app/src/main/assets/models
+          cp www/tryon/nail-unet.onnx android/app/src/main/assets/models/nail-unet.onnx
+
       - name: Verify model integrity
         working-directory: rustore-app
-        run: echo "2241935fe5d41ebac2850198598570669a00142c18c5dfc63f2ebefd808f591e  www/tryon/nail-unet.onnx" | sha256sum --check
+        run: |
+          echo "2241935fe5d41ebac2850198598570669a00142c18c5dfc63f2ebefd808f591e  www/tryon/nail-unet.onnx" | sha256sum --check
+          echo "2241935fe5d41ebac2850198598570669a00142c18c5dfc63f2ebefd808f591e  android/app/src/main/assets/models/nail-unet.onnx" | sha256sum --check
       - name: Build debug APK
         working-directory: rustore-app/android
         run: chmod +x gradlew && ./gradlew assembleDebug
