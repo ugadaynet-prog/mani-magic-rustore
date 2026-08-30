@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const ui = { start:$('startCard'), editor:$('editor'), camera:$('cameraInput'), gallery:$('galleryInput'), model:$('modelStatus'), canvas:$('resultCanvas'), busy:$('busy'), color:$('colorInput'), code:$('colorCode'), opacity:$('opacity'), opacityValue:$('opacityValue'), threshold:$('threshold'), thresholdValue:$('thresholdValue'), showMask:$('showMask'), status:$('editorStatus'), toast:$('toast'), compare:$('compareBtn'), palette:$('palette') };
+  const ui = { start:$('startCard'), editor:$('editor'), camera:$('cameraInput'), gallery:$('galleryInput'), model:$('modelStatus'), canvas:$('resultCanvas'), busy:$('busy'), color:$('colorInput'), code:$('colorCode'), opacity:$('opacity'), opacityValue:$('opacityValue'), threshold:$('threshold'), thresholdValue:$('thresholdValue'), showMask:$('showMask'), status:$('editorStatus'), toast:$('toast'), compare:$('compareBtn'), palette:$('palette'), newPhoto:$('newPhotoBtn'), share:$('shareBtn'), save:$('saveBtn'), recognize:$('recognizeBtn') };
   const colors = ['#F5D0C5','#D98A91','#F04479','#D81B60','#A81748','#8B2F67','#7446B8','#335CC7','#1597A5','#3BAA70','#D6A522','#17171B'];
   let sourceBitmap, sourceImage, probabilities, geometry, showingOriginal = false;
 
@@ -171,6 +171,46 @@
   ui.compare.addEventListener('mouseleave',()=>{showingOriginal=false;render();});
   ui.compare.addEventListener('touchstart',e=>{e.preventDefault();showingOriginal=true;render();},{passive:false});
   ui.compare.addEventListener('touchend',()=>{showingOriginal=false;render();});
+
+  // ===== Кнопка «Другое фото» =====
+  if(ui.newPhoto) ui.newPhoto.addEventListener('click',()=>{
+    if(sourceBitmap&&sourceBitmap.close)sourceBitmap.close();
+    sourceBitmap=sourceImage=null; probabilities=null;
+    ui.editor.classList.add('hidden'); ui.start.classList.remove('hidden');
+    setStatus(ui.status,'');
+  });
+
+  // ===== Кнопка «Распознать заново» =====
+  if(ui.recognize) ui.recognize.addEventListener('click',()=>{ if(sourceImage) recognize(); });
+
+  // ===== Кнопка «Сохранить результат» =====
+  if(ui.save) ui.save.addEventListener('click',()=>{
+    try {
+      const dataUrl = resultDataUrl();
+      const link = document.createElement('a');
+      link.href = dataUrl; link.download = 'mani-magic-tryon.jpg';
+      link.click();
+      toast('Сохранено в загрузки');
+    } catch(e){ toast('Не удалось сохранить'); console.error(e); }
+  });
+
+  // ===== Кнопка «Поделиться» =====
+  if(ui.share) ui.share.addEventListener('click', async ()=>{
+    try {
+      const dataUrl = resultDataUrl();
+      const blob = await (await fetch(dataUrl)).blob();
+      const file = new File([blob], 'mani-magic.jpg', { type:'image/jpeg' });
+      if(navigator.canShare && navigator.canShare({ files:[file] })) {
+        await navigator.share({ files:[file], title:'MANI Magic', text:'Примерка маникюра' });
+      } else if(navigator.share) {
+        await navigator.share({ title:'MANI Magic', text:'Примерка маникюра', url:dataUrl });
+      } else {
+        const link = document.createElement('a');
+        link.href = dataUrl; link.target='_blank'; link.click();
+        toast('Открыто в новой вкладке');
+      }
+    } catch(e){ if(e.name!=='AbortError') toast('Не удалось поделиться'); console.error(e); }
+  });
 
   document.addEventListener('DOMContentLoaded', checkNativePlugin);
   if(document.readyState!=='loading') checkNativePlugin();
