@@ -9,6 +9,10 @@ on:
         description: 'Сколько эпох (по умолчанию 150)'
         required: false
         default: '150'
+      continue_from_artifact:
+        description: 'Продолжить из предыдущего артефакта (true/false)'
+        required: false
+        default: 'true'
 
 jobs:
   train:
@@ -32,6 +36,35 @@ jobs:
           pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
           pip install numpy pillow onnx onnxruntime onnxscript
 
+      # Скачиваем предыдущий артефакт, чтобы продолжить обучение с чекпоинта
+      - name: Скачать предыдущий чекпоинт
+        if: ${{ github.event.inputs.continue_from_artifact == 'true' }}
+        run: |
+          echo "Скачиваю предыдущий артефакт nail-model..."
+          # Получаем список артефактов и находим nail-model
+          ARTIFACT_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?per_page=10" \
+            | python3 -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          for a in data.get('artifacts', []):
+            if a['name'] == 'nail-model' and not a['expired']:
+              print(a['id'])
+              break
+          ")
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "Предыдущий артефакт не найден — начинаем с нуля"
+          else
+            echo "Найден артефакт id=$ARTIFACT_ID, скачиваю..."
+            curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -o checkpoint.zip \
+              "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$ARTIFACT_ID/zip"
+            unzip -o checkpoint.zip
+            rm checkpoint.zip
+            ls -la best.pt checkpoint.pt metrics.json 2>/dev/null || true
+            echo "Чекпоинт готов для продолжения обучения"
+          fi
+
       - name: Подготовить данные
         run: python prepare.py
 
@@ -44,8 +77,6 @@ jobs:
         run: python export.py
         continue-on-error: true
 
-      # Сохраняем ДАЖЕ если экспорт упал: обучение стоит минуты, и терять его
-      # из-за последнего шага незачем — веса в best.pt уже лежат.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
