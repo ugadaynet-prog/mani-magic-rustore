@@ -1,0 +1,73 @@
+name: Train nail segmentation (continue)
+
+# Продолжение обучения с чекпоинта. Скачивает checkpoint.pt и metrics.json
+# из Release try-on-v2, и продолжает обучение с места остановки.
+on:
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: 'Сколько эпох всего (по умолчанию 150)'
+        required: false
+        default: '150'
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        working-directory: rustore-app/ml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rustore-app
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Поставить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          pip install numpy pillow onnx onnxruntime onnxscript
+
+      - name: Скачать чекпоинт из Release
+        run: |
+          echo "Downloading checkpoint from Release..."
+          curl -sL -o checkpoint.pt "https://github.com/ugadaynet-prog/mani-magic-rustore/releases/download/try-on-v2/checkpoint.pt"
+          curl -sL -o metrics.json "https://github.com/ugadaynet-prog/mani-magic-rustore/releases/download/try-on-v2/metrics.json"
+          if [ -f checkpoint.pt ] && [ -s checkpoint.pt ]; then
+            echo "✅ checkpoint.pt downloaded ($(stat -c%s checkpoint.pt) bytes)"
+            cp checkpoint.pt best.pt
+            echo "✅ best.pt created from checkpoint"
+          else
+            echo "⚠️ checkpoint.pt not found, starting from scratch"
+          fi
+          if [ -f metrics.json ] && [ -s metrics.json ]; then
+            echo "✅ metrics.json downloaded"
+            cat metrics.json | python3 -c "import sys,json; m=json.load(sys.stdin); print('Previous best IoU:', m.get('best_iou',0))"
+          fi
+
+      - name: Подготовить данные
+        run: python prepare.py
+
+      - name: Обучить (продолжение)
+        env:
+          EPOCHS: ${{ github.event.inputs.epochs }}
+        run: python train.py
+
+      - name: Экспорт в ONNX
+        run: python export.py
+        continue-on-error: true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nail-model
+          path: |
+            rustore-app/ml/nail-unet.onnx
+            rustore-app/ml/metrics.json
+            rustore-app/ml/best.pt
+            rustore-app/ml/checkpoint.pt
+          if-no-files-found: warn
