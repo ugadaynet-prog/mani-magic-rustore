@@ -34,16 +34,25 @@ jobs:
 
       - name: Скачать чекпоинт из Release
         run: |
-          echo "Downloading checkpoint from Release..."
+          echo "Downloading best.pt from Release..."
+          curl -sL -o best.pt "https://github.com/ugadaynet-prog/mani-magic-rustore/releases/download/try-on-v2/best.pt"
           curl -sL -o checkpoint.pt "https://github.com/ugadaynet-prog/mani-magic-rustore/releases/download/try-on-v2/checkpoint.pt"
           curl -sL -o metrics.json "https://github.com/ugadaynet-prog/mani-magic-rustore/releases/download/try-on-v2/metrics.json"
+          
+          if [ -f best.pt ] && [ -s best.pt ]; then
+            echo "✅ best.pt downloaded ($(stat -c%s best.pt) bytes)"
+          else
+            echo "⚠️ best.pt not found, starting from scratch"
+            rm -f best.pt
+          fi
+          
           if [ -f checkpoint.pt ] && [ -s checkpoint.pt ]; then
             echo "✅ checkpoint.pt downloaded ($(stat -c%s checkpoint.pt) bytes)"
-            cp checkpoint.pt best.pt
-            echo "✅ best.pt created from checkpoint"
           else
-            echo "⚠️ checkpoint.pt not found, starting from scratch"
+            echo "⚠️ checkpoint.pt not found"
+            rm -f checkpoint.pt
           fi
+          
           if [ -f metrics.json ] && [ -s metrics.json ]; then
             echo "✅ metrics.json downloaded"
             cat metrics.json | python3 -c "import sys,json; m=json.load(sys.stdin); print('Previous best IoU:', m.get('best_iou',0))"
