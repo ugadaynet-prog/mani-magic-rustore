@@ -1,7 +1,5 @@
 prepared.npz
-*.pt
 *.onnx
-metrics.json
 __pycache__/
 ours.zip
 hand_landmarker.task
