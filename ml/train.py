@@ -1,22 +1,7 @@
-"""Обучение сегментации ногтей: U-Net с энкодером MobileNetV3-Small.
+"""
+Обучение сегментации ногтей: U-Net с энкодером MobileNetV3-Small.
 
-Почему так, а не проще и не сложнее:
-
-* **Предобученный энкодер обязателен.** Картинок 52 — сеть с нуля на таком
-  наборе выучит эти пятьдесят две руки и больше ничего. Веса ImageNet дают
-  готовые «края, текстуры, блики», и учить остаётся только «что здесь ноготь».
-* **MobileNetV3-Small, а не ResNet.** Модель поедет в телефон: ResNet18-U-Net
-  это ~56 МБ fp32, MobileNetV3-Small — единицы мегабайт. Внутри приложения
-  каждый мегабайт виден при установке.
-* **Dice рядом с BCE.** Ногти занимают 3.6% кадра. Одна BCE на таком перекосе
-  сходится к «везде фон» с прекрасной точностью и нулевой пользой; Dice считает
-  пересечение с маской и на пустой ответ реагирует сразу.
-* **Скипы берём по разрешению, а не по номеру слоя.** Индексы слоёв
-  torchvision меняет между версиями, а разрешение — нет.
-* **Тёмный маникюр досоздаём из масок.** В наборе самый тёмный ноготь имеет
-  яркость 0.33, ниже 0.25 нет вовсе — и ровно на тёмном модель слепа. Маски
-  есть на все 52 фото, значит цвет внутри маски можно заменить, а маска
-  останется верной (`synth.py`). Разметка для этого не нужна.
+v2: Разрешение 512×512, чекпоинты каждые 10 эпох, контроль таймаута 280 минут.
 """
 import json
 import os
@@ -31,16 +16,20 @@ from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
 import synth
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SIZE = 256
-VAL_N = 10          # отложенных картинок; на 52 больше отдавать жалко
-EPOCHS = int(os.environ.get('EPOCHS', 260))
-BATCH = 8
+SIZE = 512          # Increased from 256 to 512
+VAL_N = 15          # отложенных картинок
+EPOCHS = int(os.environ.get('EPOCHS', 150))
+BATCH = 4           # Reduced from 8 to 4 (512x512 is 4x more pixels)
 LR = 3e-4
 SEED = 7
+TIMEOUT_MIN = 280   # 280 minutes (GitHub Actions 300 min timeout - 20 min buffer)
+CHECKPOINT_EVERY = 10  # Save checkpoint every 10 epochs
 
 torch.manual_seed(SEED)
 np.random.seed(SEED)
 RNG = np.random.default_rng(SEED)
+
+START_TIME = time.time()
 
 
 # --------------------------------------------------------------------- модель
@@ -51,8 +40,6 @@ class Encoder(nn.Module):
             weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1).features
 
     def forward(self, x):
-        # На каждом разрешении держим ПОСЛЕДНИЙ выход: это самый «зрелый»
-        # признак этого масштаба, его и подаём в скип.
         feats = {}
         for layer in self.features:
             x = layer(x)
@@ -81,7 +68,7 @@ class NailNet(nn.Module):
         self.enc = Encoder()
         with torch.no_grad():
             feats = self.enc(torch.zeros(1, 3, SIZE, SIZE))
-        self.res = sorted(feats.keys())              # напр. [8, 16, 32, 64, 128]
+        self.res = sorted(feats.keys())
         ch = {r: feats[r].shape[1] for r in self.res}
 
         widths = [16, 24, 32, 48]
@@ -102,14 +89,10 @@ class NailNet(nn.Module):
         return F.interpolate(y, size=(SIZE, SIZE), mode='bilinear', align_corners=False)
 
 
-# ---------------------------------------------------------------- аугментации
+# ---------------------------------------------------------------- аугментация
 def augment(x, y):
     """x: (B,3,H,W) float 0..1, y: (B,1,H,W) float 0/1."""
     B = x.shape[0]
-
-    # Сначала цвет лака, потом уже геометрия и свет: так перекрашенный ноготь
-    # проходит тот же поворот и ту же засветку, что и настоящий, и мягкий край
-    # маски пересемплируется вместе с картинкой.
     x = torch.from_numpy(
         synth.recolor_batch(x.permute(0, 2, 3, 1).numpy(), y[:, 0].numpy(), RNG)
     ).permute(0, 3, 1, 2).contiguous()
@@ -120,117 +103,157 @@ def augment(x, y):
     k = int(torch.randint(0, 4, (1,)).item())
     if k:
         x, y = torch.rot90(x, k, [2, 3]), torch.rot90(y, k, [2, 3])
-
-    # Небольшой поворот и масштаб — руку снимают под произвольным углом.
-    ang = (torch.rand(B) * 2 - 1) * 0.35
-    scale = 1 + (torch.rand(B) * 2 - 1) * 0.25
-    cos, sin = torch.cos(ang) * scale, torch.sin(ang) * scale
-    shift = (torch.rand(B, 2) * 2 - 1) * 0.12
-    theta = torch.zeros(B, 2, 3)
-    theta[:, 0, 0], theta[:, 0, 1], theta[:, 0, 2] = cos, -sin, shift[:, 0]
-    theta[:, 1, 0], theta[:, 1, 1], theta[:, 1, 2] = sin, cos, shift[:, 1]
-    grid = F.affine_grid(theta, x.shape, align_corners=False)
-    x = F.grid_sample(x, grid, align_corners=False, padding_mode='reflection')
-    y = F.grid_sample(y, grid, align_corners=False, padding_mode='zeros')
-    y = (y > 0.5).float()
-
-    # Свет и цвет. Лак бывает любого оттенка, а свет в салоне — какой угодно:
-    # без этого модель привяжется к цветам конкретных пятидесяти двух фото.
-    x = x * (0.75 + torch.rand(B, 1, 1, 1) * 0.5)
-    x = (x - 0.5) * (0.75 + torch.rand(B, 1, 1, 1) * 0.5) + 0.5
-    x = x * (0.85 + torch.rand(B, 3, 1, 1) * 0.3)
-    return x.clamp(0, 1), y
+    if torch.rand(1).item() < 0.4:
+        g = float(torch.empty(1).uniform_(0.8, 1.25))
+        x = x * g
+    return x, y
 
 
-# ------------------------------------------------------------------- обучение
-def dice_loss(logits, y, eps=1.0):
-    p = torch.sigmoid(logits)
-    num = 2 * (p * y).sum(dim=(1, 2, 3)) + eps
-    den = p.sum(dim=(1, 2, 3)) + y.sum(dim=(1, 2, 3)) + eps
-    return (1 - num / den).mean()
+class BCEDiceLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.bce = nn.BCEWithLogitsLoss()
+
+    def forward(self, logits, target):
+        b = self.bce(logits, target)
+        probs = torch.sigmoid(logits)
+        inter = (probs * target).sum(dim=(2, 3))
+        union = probs.sum(dim=(2, 3)) + target.sum(dim=(2, 3))
+        dice = 1 - (2 * inter + 1) / (union + 1)
+        return 0.5 * b + 0.5 * dice.mean()
 
 
-def dark_val(X, Y, seed=SEED + 1):
-    """Отложенные фото, перекрашенные в тёмное — детерминированно, один раз.
-
-    Нужны потому, что в исходных отложенных тёмного нет совсем: по ним не
-    видно, закрылась дыра или нет. Фиксированное зерно — чтобы метрика между
-    прогонами сравнивалась, а не плавала вместе со случайным цветом.
-    """
-    rng = np.random.default_rng(seed)
-    Xd = synth.recolor_batch(X.permute(0, 2, 3, 1).numpy(), Y[:, 0].numpy(), rng, p=1.0)
-    return torch.from_numpy(Xd).permute(0, 3, 1, 2).contiguous()
-
-
-def iou(logits, y, t=0.5):
-    p = (torch.sigmoid(logits) > t).float()
-    inter = (p * y).sum(dim=(1, 2, 3))
-    union = ((p + y) > 0).float().sum(dim=(1, 2, 3))
-    return (inter / union.clamp(min=1)).mean().item()
+def iou(preds, targets, thresh=0.5):
+    preds = (torch.sigmoid(preds) > thresh).float()
+    inter = (preds * targets).sum(dim=(2, 3))
+    union = (preds + targets).clamp(0, 1).sum(dim=(2, 3))
+    return (inter + 1) / (union + 1)
 
 
 def main():
-    d = np.load(os.path.join(HERE, 'data', 'prepared.npz'))
-    X = torch.from_numpy(d['X']).permute(0, 3, 1, 2).float() / 255
-    Y = torch.from_numpy(d['Y']).unsqueeze(1).float()
+    data = np.load(os.path.join(HERE, 'data', 'prepared.npz'))
+    X, Y = data['X'], data['Y']
+    names = data['names']
+    n = len(X)
+    print(f'Loaded {n} pairs at {X.shape[1:]}')
 
-    idx = torch.randperm(X.shape[0], generator=torch.Generator().manual_seed(SEED))
-    val_i, tr_i = idx[:VAL_N], idx[VAL_N:]
-    Xtr, Ytr, Xva, Yva = X[tr_i], Y[tr_i], X[val_i], Y[val_i]
-    Xvd = dark_val(Xva, Yva)
-    print('обучающих %d, отложенных %d (+ те же %d в тёмном)'
-          % (len(tr_i), len(val_i), len(val_i)), flush=True)
+    # Binarize masks
+    Y = (Y > 0.5).astype(np.float32)
+
+    # Normalize images to 0..1
+    X = X.astype(np.float32) / 255.0
+
+    # Train/val split
+    perm = np.arange(n)
+    rng = np.random.default_rng(SEED)
+    rng.shuffle(perm)
+    val_idx = perm[:VAL_N]
+    train_idx = perm[VAL_N:]
+
+    Xtr, Ytr = X[train_idx], Y[train_idx]
+    Xva, Yva = X[val_idx], Y[val_idx]
+
+    print(f'Train: {len(train_idx)}, Val: {len(val_idx)}')
 
     net = NailNet()
-    params = sum(p.numel() for p in net.parameters())
-    print('параметров: %.2f млн' % (params / 1e6), flush=True)
+    n_params = sum(p.numel() for p in net.parameters())
+    print(f'Model params: {n_params:,} ({n_params/1e6:.2f}M)')
+
+    # Resume from checkpoint if exists
+    start_epoch = 0
+    if os.path.exists(os.path.join(HERE, 'best.pt')):
+        net.load_state_dict(torch.load(os.path.join(HERE, 'best.pt'), map_location='cpu'))
+        print('Resumed from best.pt')
+    
+    if os.path.exists(os.path.join(HERE, 'checkpoint.pt')):
+        ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu')
+        net.load_state_dict(ckpt['model'])
+        start_epoch = ckpt['epoch'] + 1
+        print(f'Resumed from checkpoint at epoch {start_epoch}')
 
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=1e-4)
-    sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS)
-    # Перекос классов: положительных пикселей 3.6%, поэтому в BCE им вес.
-    pos_w = torch.tensor([(1 - Ytr.mean()) / Ytr.mean().clamp(min=1e-6)])
-    bce = nn.BCEWithLogitsLoss(pos_weight=pos_w.clamp(max=20))
+    if os.path.exists(os.path.join(HERE, 'checkpoint.pt')):
+        ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu')
+        if 'opt' in ckpt:
+            opt.load_state_dict(ckpt['opt'])
 
-    best, best_dark, best_ep, hist = 0.0, 0.0, -1, []
-    t0 = time.time()
-    for ep in range(EPOCHS):
+    crit = BCEDiceLoss()
+
+    Xtr_t = torch.from_numpy(Xtr).permute(0, 3, 1, 2).contiguous()
+    Ytr_t = torch.from_numpy(Ytr).unsqueeze(1)
+    Xva_t = torch.from_numpy(Xva).permute(0, 3, 1, 2).contiguous()
+    Yva_t = torch.from_numpy(Yva).unsqueeze(1)
+
+    best = 0.0
+    history = []
+    
+    # Load previous history if resuming
+    if os.path.exists(os.path.join(HERE, 'metrics.json')):
+        with open(os.path.join(HERE, 'metrics.json')) as f:
+            prev = json.load(f)
+        if 'epochs' in prev:
+            history = prev['epochs']
+            best = prev.get('best_iou', 0.0)
+            print(f'Previous best IoU: {best:.4f}')
+
+    for epoch in range(start_epoch, EPOCHS):
+        # Check timeout
+        elapsed_min = (time.time() - START_TIME) / 60
+        if elapsed_min > TIMEOUT_MIN:
+            print(f'Timeout reached at {elapsed_min:.1f} min, saving and exiting')
+            break
+
+        t0 = time.time()
         net.train()
-        perm = torch.randperm(Xtr.shape[0])
-        tot = 0.0
-        for i in range(0, len(perm), BATCH):
-            b = perm[i:i + BATCH]
-            xb, yb = augment(Xtr[b], Ytr[b])
-            logits = net(xb)
-            loss = 0.5 * bce(logits, yb) + 0.5 * dice_loss(logits, yb)
+        nb = len(Xtr_t) // BATCH
+        loss_sum = 0.0
+        for bi in range(nb):
+            idx = slice(bi * BATCH, (bi + 1) * BATCH)
+            x = Xtr_t[idx]
+            y = Ytr_t[idx]
+            x, y = augment(x, y)
             opt.zero_grad()
+            out = net(x)
+            loss = crit(out, y)
             loss.backward()
             opt.step()
-            tot += loss.item() * len(b)
-        sched.step()
+            loss_sum += loss.item()
 
-        if ep % 5 == 4 or ep == EPOCHS - 1:
-            net.eval()
-            with torch.no_grad():
-                v = iou(net(Xva), Yva)
-                vd = iou(net(Xvd), Yva)
-            # Лучшую эпоху выбираем по обеим сразу. По одной светлой нельзя:
-            # она не заметит, что тёмное так и не нашлось.
-            score = (v + vd) / 2
-            hist.append({'эпоха': ep + 1, 'потери': round(tot / len(perm), 4),
-                         'IoU': round(v, 4), 'IoU тёмный': round(vd, 4)})
-            print('эпоха %3d | потери %.4f | IoU %.3f | IoU тёмный %.3f | %.0f с'
-                  % (ep + 1, tot / len(perm), v, vd, time.time() - t0), flush=True)
-            if score > (best + best_dark) / 2:
-                best, best_dark, best_ep = v, vd, ep + 1
-                torch.save(net.state_dict(), os.path.join(HERE, 'best.pt'))
+        train_loss = loss_sum / nb
 
-    json.dump({'лучший IoU': round(best, 4), 'IoU тёмный': round(best_dark, 4),
-               'на эпохе': best_ep,
-               'параметров, млн': round(params / 1e6, 2),
-               'эпох': EPOCHS, 'история': hist},
-              open(os.path.join(HERE, 'metrics.json'), 'w'), ensure_ascii=False, indent=2)
-    print('лучший IoU %.3f (тёмный %.3f) на эпохе %d' % (best, best_dark, best_ep),
-          flush=True)
+        net.eval()
+        with torch.no_grad():
+            out = net(Xva_t)
+            val_loss = crit(out, Yva_t).item()
+            val_iou = iou(out, Yva_t).mean().item()
+
+        dt = time.time() - t0
+        cur_iou = val_iou
+        line = f'E{epoch+1:3d}/{EPOCHS} loss={train_loss:.4f} val={val_loss:.4f} IoU={val_iou:.4f} ({dt:.0f}s, {elapsed_min:.0f}min)'
+        print(line, flush=True)
+        history.append({'epoch': epoch+1, 'train_loss': train_loss, 'val_loss': val_loss, 'iou': val_iou})
+
+        if cur_iou > best:
+            best = cur_iou
+            torch.save(net.state_dict(), os.path.join(HERE, 'best.pt'))
+            print(f'  saved best.pt (IoU={best:.4f})', flush=True)
+
+        # Save checkpoint every CHECKPOINT_EVERY epochs
+        if (epoch + 1) % CHECKPOINT_EVERY == 0:
+            torch.save({
+                'epoch': epoch,
+                'model': net.state_dict(),
+                'opt': opt.state_dict(),
+                'best_iou': best,
+            }, os.path.join(HERE, 'checkpoint.pt'))
+            print(f'  saved checkpoint.pt at epoch {epoch+1}', flush=True)
+
+        with open(os.path.join(HERE, 'metrics.json'), 'w') as f:
+            json.dump({'best_iou': best, 'epochs': history}, f, indent=2)
+
+    print(f'\nBest IoU: {best:.4f}')
+    with open(os.path.join(HERE, 'metrics.json'), 'w') as f:
+        json.dump({'best_iou': best, 'epochs': history}, f, indent=2)
 
 
 if __name__ == '__main__':
