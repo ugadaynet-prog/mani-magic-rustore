@@ -59,8 +59,8 @@ jobs:
       - name: Verify model integrity
         working-directory: rustore-app
         run: |
-          echo "697460569e5667ecb82e97d3cd6b1a0e06dd30208112fd693d2580003862aac9  www/tryon/nail-unet.onnx" | sha256sum --check
-          echo "697460569e5667ecb82e97d3cd6b1a0e06dd30208112fd693d2580003862aac9  android/app/src/main/assets/models/nail-unet.onnx" | sha256sum --check
+          echo "b2271c457a586fb704c0a30bdedd4191d54d371000df54d15df4111c8f45f969  www/tryon/nail-unet.onnx" | sha256sum --check
+          echo "b2271c457a586fb704c0a30bdedd4191d54d371000df54d15df4111c8f45f969  android/app/src/main/assets/models/nail-unet.onnx" | sha256sum --check
       - name: Build debug APK
         working-directory: rustore-app/android
         run: chmod +x gradlew && ./gradlew assembleDebug
