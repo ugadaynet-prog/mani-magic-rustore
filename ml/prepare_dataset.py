@@ -3,6 +3,8 @@
 Downloads and merges all available nail segmentation datasets with masks.
 Produces a unified dataset at dataset_merged/images/ and dataset_merged/masks/
 ready for training. Deduplicates by image content hash.
+
+v2: Added Golbstein (193) and Ademakdogan (52) datasets.
 """
 import os, sys, shutil, hashlib, zipfile, subprocess, urllib.request
 from PIL import Image
@@ -25,9 +27,14 @@ def add_pair(img_path, mask_path):
     if not os.path.exists(img_path) or not os.path.exists(mask_path):
         return
     try:
-        mask = Image.open(mask_path).convert('L')
+        mask = Image.open(mask_path)
         arr = np.array(mask)
-        if (arr > 0).sum() == 0:
+        # Handle both grayscale and RGB masks
+        if arr.ndim == 3:
+            binary = (arr > 0).any(axis=2)
+        else:
+            binary = arr > 0
+        if not binary.any():
             skipped += 1
             return
     except:
@@ -37,8 +44,10 @@ def add_pair(img_path, mask_path):
         skipped += 1
         return
     seen_hashes.add(h)
-    shutil.copy(img_path, f'dataset_merged/images/{count:05d}.jpg')
-    shutil.copy(mask_path, f'dataset_merged/masks/{count:05d}.png')
+    # Save image as JPG
+    Image.open(img_path).convert('RGB').save(f'dataset_merged/images/{count:05d}.jpg', quality=95)
+    # Save mask as binary PNG
+    Image.fromarray(binary.astype(np.uint8) * 255, 'L').save(f'dataset_merged/masks/{count:05d}.png')
     count += 1
 
 def download_git_zip(url, dest):
@@ -123,13 +132,52 @@ if os.path.exists('behrooz.zip'):
                     add_pair(f'{img_dir}/{f}', f'{mask_dir}/{f}')
     print(f'After behrooz: {count}')
 
+# 5. Golbstein Fingernails-Segmentation (193 images, RGB masks with nail indices)
+print('Downloading Golbstein dataset (19MB)...')
+download_git_zip(
+    'https://github.com/Golbstein/Fingernails-Segmentation/raw/master/nails.tar.gz',
+    'golbstein.tar.gz'
+)
+if os.path.exists('golbstein.tar.gz'):
+    import tarfile
+    with tarfile.open('golbstein.tar.gz') as t:
+        t.extractall('golbstein_d')
+    img_dir = 'golbstein_d/nails/raw'
+    mask_dir = 'golbstein_d/nails/mask'
+    if os.path.exists(img_dir) and os.path.exists(mask_dir):
+        for f in sorted(os.listdir(mask_dir)):
+            if not f.lower().endswith('.png'):
+                continue
+            raw_path = os.path.join(img_dir, f)
+            if not os.path.exists(raw_path):
+                continue
+            add_pair(raw_path, os.path.join(mask_dir, f))
+    print(f'After golbstein: {count}')
+
+# 6. Ademakdogan nails_segmentation (52 images, DeepLabV3 dataset)
+print('Cloning ademakdogan repo...')
+if not os.path.exists('ademakdogan_d'):
+    subprocess.run(['git', 'clone', '--depth', '1',
+                    'https://github.com/ademakdogan/nails_segmentation.git', 'ademakdogan_d'],
+                   capture_output=True, timeout=120)
+if os.path.exists('ademakdogan_d'):
+    for split in ['train', 'val', 'test']:
+        img_dir = f'ademakdogan_d/dataset/processed/{split}'
+        mask_dir = f'ademakdogan_d/dataset/processed/{split}_labels'
+        if os.path.exists(img_dir) and os.path.exists(mask_dir):
+            for f in sorted(os.listdir(img_dir)):
+                mask_path = os.path.join(mask_dir, f)
+                if os.path.exists(mask_path):
+                    add_pair(os.path.join(img_dir, f), mask_path)
+    print(f'After ademakdogan: {count}')
+
 print(f'\n=== FINAL MERGED DATASET: {count} unique images with real masks ===')
 print(f'Skipped (empty masks or duplicates): {skipped}')
 
 # Cleanup large download dirs
-for d in ['vpapenko_d', 'paulina_d', 'zea_d', 'behrooz_d']:
+for d in ['vpapenko_d', 'paulina_d', 'zea_d', 'behrooz_d', 'golbstein_d', 'ademakdogan_d']:
     shutil.rmtree(d, ignore_errors=True)
-for f in ['vpapenko.zip', 'paulina.zip', 'behrooz.zip']:
+for f in ['vpapenko.zip', 'paulina.zip', 'behrooz.zip', 'golbstein.tar.gz']:
     if os.path.exists(f):
         os.remove(f)
 
