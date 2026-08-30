@@ -1,7 +1,8 @@
 """
 Обучение сегментации ногтей: U-Net с энкодером MobileNetV3-Small.
 
-v2: Разрешение 512×512, чекпоинты каждые 10 эпох, контроль таймаута 280 минут.
+v3: Ленивая загрузка данных с диска (Dataset класс), разрешение 256x256,
+контроль таймаута 280 минут, чекпоинты каждые 10 эпох.
 """
 import json
 import os
@@ -11,19 +12,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
 from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
-
-import synth
+from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SIZE = 512          # Increased from 256 to 512
-VAL_N = 15          # отложенных картинок
+SIZE = 256           # 256x256 — оптимально для CPU и памяти GitHub Actions
+VAL_N = 15           # отложенных картинок
 EPOCHS = int(os.environ.get('EPOCHS', 150))
-BATCH = 4           # Reduced from 8 to 4 (512x512 is 4x more pixels)
+BATCH = 8
 LR = 3e-4
 SEED = 7
-TIMEOUT_MIN = 280   # 280 minutes (GitHub Actions 300 min timeout - 20 min buffer)
-CHECKPOINT_EVERY = 10  # Save checkpoint every 10 epochs
+TIMEOUT_MIN = 280    # 280 минут (буфер 20 мин от лимита 300)
+CHECKPOINT_EVERY = 10
 
 torch.manual_seed(SEED)
 np.random.seed(SEED)
@@ -89,24 +90,38 @@ class NailNet(nn.Module):
         return F.interpolate(y, size=(SIZE, SIZE), mode='bilinear', align_corners=False)
 
 
-# ---------------------------------------------------------------- аугментация
-def augment(x, y):
-    """x: (B,3,H,W) float 0..1, y: (B,1,H,W) float 0/1."""
-    B = x.shape[0]
-    x = torch.from_numpy(
-        synth.recolor_batch(x.permute(0, 2, 3, 1).numpy(), y[:, 0].numpy(), RNG)
-    ).permute(0, 3, 1, 2).contiguous()
-    if torch.rand(1).item() < 0.5:
-        x, y = torch.flip(x, [3]), torch.flip(y, [3])
-    if torch.rand(1).item() < 0.3:
-        x, y = torch.flip(x, [2]), torch.flip(y, [2])
-    k = int(torch.randint(0, 4, (1,)).item())
-    if k:
-        x, y = torch.rot90(x, k, [2, 3]), torch.rot90(y, k, [2, 3])
-    if torch.rand(1).item() < 0.4:
-        g = float(torch.empty(1).uniform_(0.8, 1.25))
-        x = x * g
-    return x, y
+# ----------------------------------------------------- Dataset: ленивая загрузка
+class NailDataset(Dataset):
+    """Загружает изображения с диска по одной — не держит весь датасет в памяти."""
+    def __init__(self, img_dir, mask_dir, size=256, indices=None):
+        self.img_dir = img_dir
+        self.mask_dir = mask_dir
+        self.size = size
+        all_files = sorted(f for f in os.listdir(img_dir) 
+                           if f.lower().endswith(('.jpg', '.jpeg', '.png')))
+        if indices is not None:
+            self.files = [all_files[i] for i in indices]
+        else:
+            self.files = all_files
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        fname = self.files[idx]
+        img = Image.open(os.path.join(self.img_dir, fname)).convert('RGB')
+        mask_name = fname.rsplit('.', 1)[0] + '.png'
+        mask = Image.open(os.path.join(self.mask_dir, mask_name)).convert('L')
+
+        img = img.resize((self.size, self.size), Image.BILINEAR)
+        mask = mask.resize((self.size, self.size), Image.NEAREST)
+
+        img = np.array(img, dtype=np.float32) / 255.0
+        mask = (np.array(mask) > 127).astype(np.float32)
+
+        img = torch.from_numpy(img).permute(2, 0, 1)
+        mask = torch.from_numpy(mask).unsqueeze(0)
+        return img, mask
 
 
 class BCEDiceLoss(nn.Module):
@@ -130,41 +145,56 @@ def iou(preds, targets, thresh=0.5):
     return (inter + 1) / (union + 1)
 
 
+def augment_batch(x, y):
+    """Аугментация на лету: flips, rotation, brightness."""
+    if torch.rand(1).item() < 0.5:
+        x, y = torch.flip(x, [3]), torch.flip(y, [3])
+    if torch.rand(1).item() < 0.3:
+        x, y = torch.flip(x, [2]), torch.flip(y, [2])
+    k = int(torch.randint(0, 4, (1,)).item())
+    if k:
+        x, y = torch.rot90(x, k, [2, 3]), torch.rot90(y, k, [2, 3])
+    if torch.rand(1).item() < 0.4:
+        g = float(torch.empty(1).uniform_(0.8, 1.25))
+        x = x * g
+    return x, y
+
+
 def main():
-    data = np.load(os.path.join(HERE, 'data', 'prepared.npz'))
-    X, Y = data['X'], data['Y']
-    names = data['names']
-    n = len(X)
-    print(f'Loaded {n} pairs at {X.shape[1:]}')
+    img_dir = os.path.join(HERE, 'dataset_aug', 'images')
+    mask_dir = os.path.join(HERE, 'dataset_aug', 'masks')
 
-    # Binarize masks
-    Y = (Y > 0.5).astype(np.float32)
+    if not os.path.exists(img_dir):
+        raise SystemExit('dataset_aug/ not found. Run prepare.py first.')
 
-    # Normalize images to 0..1
-    X = X.astype(np.float32) / 255.0
+    n_total = len([f for f in os.listdir(img_dir) if f.lower().endswith(('.jpg', '.png'))])
+    print(f'Total augmented images: {n_total}')
 
-    # Train/val split
-    perm = np.arange(n)
+    # Split train/val
     rng = np.random.default_rng(SEED)
-    rng.shuffle(perm)
-    val_idx = perm[:VAL_N]
-    train_idx = perm[VAL_N:]
+    perm = rng.permutation(n_total)
+    val_idx = perm[:VAL_N].tolist()
+    train_idx = perm[VAL_N:].tolist()
 
-    Xtr, Ytr = X[train_idx], Y[train_idx]
-    Xva, Yva = X[val_idx], Y[val_idx]
+    train_ds = NailDataset(img_dir, mask_dir, SIZE, train_idx)
+    val_ds = NailDataset(img_dir, mask_dir, SIZE, val_idx)
 
-    print(f'Train: {len(train_idx)}, Val: {len(val_idx)}')
+    train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True, num_workers=2, drop_last=True)
+    val_loader = DataLoader(val_ds, batch_size=BATCH, shuffle=False, num_workers=2)
+
+    print(f'Train: {len(train_ds)}, Val: {len(val_ds)}')
+    print(f'Train batches: {len(train_loader)}, Val batches: {len(val_loader)}')
 
     net = NailNet()
     n_params = sum(p.numel() for p in net.parameters())
     print(f'Model params: {n_params:,} ({n_params/1e6:.2f}M)')
 
-    # Resume from checkpoint if exists
+    # Resume from checkpoint
     start_epoch = 0
     if os.path.exists(os.path.join(HERE, 'best.pt')):
         net.load_state_dict(torch.load(os.path.join(HERE, 'best.pt'), map_location='cpu'))
         print('Resumed from best.pt')
-    
+
     if os.path.exists(os.path.join(HERE, 'checkpoint.pt')):
         ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu')
         net.load_state_dict(ckpt['model'])
@@ -179,15 +209,9 @@ def main():
 
     crit = BCEDiceLoss()
 
-    Xtr_t = torch.from_numpy(Xtr).permute(0, 3, 1, 2).contiguous()
-    Ytr_t = torch.from_numpy(Ytr).unsqueeze(1)
-    Xva_t = torch.from_numpy(Xva).permute(0, 3, 1, 2).contiguous()
-    Yva_t = torch.from_numpy(Yva).unsqueeze(1)
-
     best = 0.0
     history = []
-    
-    # Load previous history if resuming
+
     if os.path.exists(os.path.join(HERE, 'metrics.json')):
         with open(os.path.join(HERE, 'metrics.json')) as f:
             prev = json.load(f)
@@ -200,45 +224,48 @@ def main():
         # Check timeout
         elapsed_min = (time.time() - START_TIME) / 60
         if elapsed_min > TIMEOUT_MIN:
-            print(f'Timeout reached at {elapsed_min:.1f} min, saving and exiting')
+            print(f'Timeout at {elapsed_min:.1f} min, saving and exiting')
             break
 
         t0 = time.time()
         net.train()
-        nb = len(Xtr_t) // BATCH
         loss_sum = 0.0
-        for bi in range(nb):
-            idx = slice(bi * BATCH, (bi + 1) * BATCH)
-            x = Xtr_t[idx]
-            y = Ytr_t[idx]
-            x, y = augment(x, y)
+        nb = len(train_loader)
+        for bi, (x, y) in enumerate(train_loader):
+            x, y = augment_batch(x, y)
             opt.zero_grad()
             out = net(x)
             loss = crit(out, y)
             loss.backward()
             opt.step()
             loss_sum += loss.item()
+            if bi % 100 == 0:
+                print(f'  E{epoch+1} B{bi}/{nb} loss={loss.item():.4f}', flush=True)
 
         train_loss = loss_sum / nb
 
+        # Validation
         net.eval()
+        val_loss_sum = 0.0
+        iou_sum = 0.0
         with torch.no_grad():
-            out = net(Xva_t)
-            val_loss = crit(out, Yva_t).item()
-            val_iou = iou(out, Yva_t).mean().item()
+            for x, y in val_loader:
+                out = net(x)
+                val_loss_sum += crit(out, y).item()
+                iou_sum += iou(out, y).mean().item()
+
+        val_loss = val_loss_sum / len(val_loader)
+        val_iou = iou_sum / len(val_loader)
 
         dt = time.time() - t0
-        cur_iou = val_iou
-        line = f'E{epoch+1:3d}/{EPOCHS} loss={train_loss:.4f} val={val_loss:.4f} IoU={val_iou:.4f} ({dt:.0f}s, {elapsed_min:.0f}min)'
-        print(line, flush=True)
+        print(f'E{epoch+1:3d}/{EPOCHS} loss={train_loss:.4f} val={val_loss:.4f} IoU={val_iou:.4f} ({dt:.0f}s, {elapsed_min:.0f}min)', flush=True)
         history.append({'epoch': epoch+1, 'train_loss': train_loss, 'val_loss': val_loss, 'iou': val_iou})
 
-        if cur_iou > best:
-            best = cur_iou
+        if val_iou > best:
+            best = val_iou
             torch.save(net.state_dict(), os.path.join(HERE, 'best.pt'))
             print(f'  saved best.pt (IoU={best:.4f})', flush=True)
 
-        # Save checkpoint every CHECKPOINT_EVERY epochs
         if (epoch + 1) % CHECKPOINT_EVERY == 0:
             torch.save({
                 'epoch': epoch,
