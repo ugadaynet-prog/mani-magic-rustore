@@ -1,7 +1,8 @@
 name: Train nail segmentation
 
-# Только вручную. Обучение не имеет отношения к сборке приложения и не должно
-# запускаться от каждого пуша — иначе оно будет драться за очередь с .aab.
+# Только вручную. Обучение не имеет отношения к сборке приложения.
+# Чекпоинты (best.pt, checkpoint.pt) сохраняются в Release "try-on-v2"
+# чтобы следующий запуск мог корректно возобновиться с места остановки.
 on:
   workflow_dispatch:
     inputs:
@@ -14,6 +15,8 @@ jobs:
   train:
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: rustore-app/ml
@@ -32,19 +35,33 @@ jobs:
           pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
           pip install numpy pillow onnx onnxruntime onnxscript
 
-      - name: Скачать чекпоинт предыдущего обучения
+      - name: Скачать чекпоинт из Release
         run: |
-          # Если в репозитории есть best.pt и checkpoint.pt — используем их для resume
-          if [ -f best.pt ]; then
-            echo "Found best.pt in repo — will resume training"
-            ls -lh best.pt
-          else
-            echo "No checkpoint found — training from scratch"
-          fi
-          if [ -f checkpoint.pt ]; then
-            echo "Found checkpoint.pt in repo"
-            ls -lh checkpoint.pt
-          fi
+          echo "Downloading checkpoint from Release assets..."
+          curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/ugadaynet-prog/mani-magic-rustore/releases/tags/try-on-v2" \
+            -o release.json
+          
+          python3 << 'EOF'
+          import json, urllib.request, os
+          with open('release.json') as f:
+              release = json.load(f)
+          for asset in release.get('assets', []):
+              if asset['name'] in ('best-v3.pt', 'checkpoint-v3.pt'):
+                  local = 'best.pt' if asset['name'] == 'best-v3.pt' else 'checkpoint.pt'
+                  print(f"Found {asset['name']} ({asset['size']/1024/1024:.1f} MB)")
+                  req = urllib.request.Request(asset['url'])
+                  req.add_header('Authorization', 'token ${{ secrets.GITHUB_TOKEN }}')
+                  req.add_header('Accept', 'application/octet-stream')
+                  with urllib.request.urlopen(req) as r:
+                      with open(local, 'wb') as out:
+                          out.write(r.read())
+                  print(f"Downloaded {local}")
+          if not os.path.exists('best.pt') and not os.path.exists('checkpoint.pt'):
+              print("No checkpoints found — training from scratch")
+          EOF
+          
+          ls -lh best.pt checkpoint.pt 2>/dev/null || echo "No checkpoints found — training from scratch"
 
       - name: Подготовить данные
         run: python prepare.py
@@ -58,32 +75,75 @@ jobs:
         run: python export.py
         continue-on-error: true
 
-      - name: Сохранить обновлённый чекпоинт в репозиторий
-        if: success()
+      # ============================================================
+      # СОХРАНИТЬ ЧЕКПОИНТЫ В RELEASE (для возобновления обучения)
+      # ============================================================
+      - name: Сохранить чекпоинты в Release
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Configure git
-          cd /home/runner/work/mani-magic-rustore/mani-magic-rustore/rustore-app
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          echo "Uploading checkpoints to Release try-on-v2..."
           
-          # Copy checkpoint files back to ml/
-          if [ -f ml/best.pt ]; then
-            cp ml/best.pt ml/best.pt
-          fi
-          if [ -f ml/checkpoint.pt ]; then
-            cp ml/checkpoint.pt ml/checkpoint.pt
-          fi
+          # Получаем ID релиза
+          RELEASE_ID=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/ugadaynet-prog/mani-magic-rustore/releases/tags/try-on-v2" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "Release ID: $RELEASE_ID"
           
-          git add ml/best.pt ml/checkpoint.pt ml/metrics.json 2>/dev/null || true
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "Update checkpoint after training [skip ci]"
-            git push
-            echo "Checkpoint pushed to repo"
-          fi
+          # Функция: удалить старый asset и загрузить новый
+          upload_asset() {
+            local file="$1"
+            local asset_name="$2"
+            
+            if [ ! -f "$file" ]; then
+              echo "  $file not found, skipping"
+              return 0
+            fi
+            
+            local size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file")
+            echo "  Uploading $file ($(($size/1024/1024)) MB) as $asset_name..."
+            
+            # Удалить старый asset с таким же именем
+            OLD_ID=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/ugadaynet-prog/mani-magic-rustore/releases/$RELEASE_ID/assets" \
+              | python3 -c "
+          import sys,json
+          for a in json.load(sys.stdin):
+              if a['name']=='$asset_name':
+                  print(a['id'])
+                  break
+          ")
+            if [ -n "$OLD_ID" ]; then
+              echo "    Deleting old $asset_name (id=$OLD_ID)..."
+              curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+                "https://api.github.com/repos/ugadaynet-prog/mani-magic-rustore/releases/assets/$OLD_ID"
+            fi
+            
+            # Загрузить новый asset
+            HTTP_CODE=$(curl -s -o /tmp/upload_resp.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: token $GH_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$file" \
+              "https://uploads.github.com/repos/ugadaynet-prog/mani-magic-rustore/releases/$RELEASE_ID/assets?name=$asset_name")
+            
+            if [ "$HTTP_CODE" = "201" ]; then
+              echo "    ✅ Uploaded $asset_name successfully"
+            else
+              echo "    ❌ Upload failed (HTTP $HTTP_CODE)"
+              cat /tmp/upload_resp.json
+            fi
+          }
+          
+          upload_asset "best.pt" "best-v3.pt"
+          upload_asset "checkpoint.pt" "checkpoint-v3.pt"
+          upload_asset "metrics.json" "metrics-v3.json"
+          upload_asset "nail-unet.onnx" "nail-unet-v3.onnx"
+          
+          echo ""
+          echo "=== All checkpoints saved to Release ==="
 
-      # Сохраняем ДАЖЕ если экспорт упал
       - uses: actions/upload-artifact@v4
         if: always()
         with:
