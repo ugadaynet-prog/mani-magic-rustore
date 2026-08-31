@@ -186,7 +186,7 @@ def main():
 
     if os.path.exists(os.path.join(HERE, 'checkpoint.pt')):
         print('Loading checkpoint.pt...', flush=True)
-        ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu')
+        ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu', weights_only=False)
         net.load_state_dict(ckpt['model'])
         start_epoch = ckpt['epoch'] + 1
         best = ckpt.get('best_iou', 0.0)
@@ -200,12 +200,12 @@ def main():
                 history = prev['epochs']
                 print(f'Loaded {len(history)} previous epochs from metrics.json', flush=True)
     elif os.path.exists(os.path.join(HERE, 'best.pt')):
-        net.load_state_dict(torch.load(os.path.join(HERE, 'best.pt'), map_location='cpu'))
+        net.load_state_dict(torch.load(os.path.join(HERE, 'best.pt'), map_location='cpu', weights_only=True))
         print('Loaded best.pt (no checkpoint, starting from epoch 1)', flush=True)
 
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=1e-4)
     if os.path.exists(os.path.join(HERE, 'checkpoint.pt')):
-        ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu')
+        ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu', weights_only=False)
         if 'opt' in ckpt:
             opt.load_state_dict(ckpt['opt'])
             print('Loaded optimizer state', flush=True)
