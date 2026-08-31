@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SIZE = 256
+SIZE = 384
 THRESH = 128
 
 
