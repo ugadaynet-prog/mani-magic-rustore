@@ -1,12 +1,11 @@
 """
 Обучение сегментации ногтей: U-Net с энкодером MobileNetV3-Small.
 
-v4: Resume из checkpoint.pt (скачивается из Release), ленивая загрузка данных.
+v4: Поддержка resume из checkpoint, контроль таймаута 280 минут.
 """
 import json
 import os
 import time
-import urllib.request
 
 import numpy as np
 import torch
@@ -23,12 +22,8 @@ EPOCHS = int(os.environ.get('EPOCHS', 150))
 BATCH = 8
 LR = 3e-4
 SEED = 7
-TIMEOUT_MIN = 270   # 270 минут (буфер 30 мин)
-CHECKPOINT_EVERY = 5  # Чаще сохраняем чекпоинт
-
-# URL для скачивания чекпоинта (если он есть в Release)
-CHECKPOINT_URL = "https://github.com/ugadaynet-prog/mani-magic-rustore/releases/download/try-on-v2/checkpoint.pt"
-BEST_URL = "https://github.com/ugadaynet-prog/mani-magic-rustore/releases/download/try-on-v2/best.pt"
+TIMEOUT_MIN = 280
+CHECKPOINT_EVERY = 10
 
 torch.manual_seed(SEED)
 np.random.seed(SEED)
@@ -37,27 +32,6 @@ RNG = np.random.default_rng(SEED)
 START_TIME = time.time()
 
 
-def download_checkpoint():
-    """Скачивает checkpoint.pt и best.pt из Release, если они есть."""
-    for url, filename in [(CHECKPOINT_URL, "checkpoint.pt"), (BEST_URL, "best.pt")]:
-        dest = os.path.join(HERE, filename)
-        if os.path.exists(dest):
-            print(f"  {filename} already exists ({os.path.getsize(dest)/1024/1024:.1f} MB)")
-            continue
-        print(f"  Downloading {filename} from Release...")
-        try:
-            req = urllib.request.Request(url)
-            req.add_header("Authorization", "token ${{ secrets.GITHUB_TOKEN }}")
-            with urllib.request.urlopen(req, timeout=60) as r:
-                data = r.read()
-            with open(dest, 'wb') as f:
-                f.write(data)
-            print(f"    Downloaded: {len(data)/1024/1024:.1f} MB")
-        except Exception as e:
-            print(f"    Failed to download {filename}: {e}")
-
-
-# --------------------------------------------------------------------- модель
 class Encoder(nn.Module):
     def __init__(self):
         super().__init__()
@@ -95,7 +69,6 @@ class NailNet(nn.Module):
             feats = self.enc(torch.zeros(1, 3, SIZE, SIZE))
         self.res = sorted(feats.keys())
         ch = {r: feats[r].shape[1] for r in self.res}
-
         widths = [16, 24, 32, 48]
         ups, c_in = [], ch[self.res[0]]
         for i, r in enumerate(self.res[1:]):
@@ -114,7 +87,6 @@ class NailNet(nn.Module):
         return F.interpolate(y, size=(SIZE, SIZE), mode='bilinear', align_corners=False)
 
 
-# ----------------------------------------------------- Dataset: ленивая загрузка
 class NailDataset(Dataset):
     def __init__(self, img_dir, mask_dir, size=256, indices=None):
         self.img_dir = img_dir
@@ -135,13 +107,10 @@ class NailDataset(Dataset):
         img = Image.open(os.path.join(self.img_dir, fname)).convert('RGB')
         mask_name = fname.rsplit('.', 1)[0] + '.png'
         mask = Image.open(os.path.join(self.mask_dir, mask_name)).convert('L')
-
         img = img.resize((self.size, self.size), Image.BILINEAR)
         mask = mask.resize((self.size, self.size), Image.NEAREST)
-
         img = np.array(img, dtype=np.float32) / 255.0
         mask = (np.array(mask) > 127).astype(np.float32)
-
         img = torch.from_numpy(img).permute(2, 0, 1)
         mask = torch.from_numpy(mask).unsqueeze(0)
         return img, mask
@@ -169,7 +138,6 @@ def iou(preds, targets, thresh=0.5):
 
 
 def augment_batch(x, y):
-    """Аугментация на лету: flips, rotation, brightness."""
     if torch.rand(1).item() < 0.5:
         x, y = torch.flip(x, [3]), torch.flip(y, [3])
     if torch.rand(1).item() < 0.3:
@@ -191,7 +159,7 @@ def main():
         raise SystemExit('dataset_aug/ not found. Run prepare.py first.')
 
     n_total = len([f for f in os.listdir(img_dir) if f.lower().endswith(('.jpg', '.png'))])
-    print(f'Total augmented images: {n_total}')
+    print(f'Total augmented images: {n_total}', flush=True)
 
     rng = np.random.default_rng(SEED)
     perm = rng.permutation(n_total)
@@ -204,16 +172,12 @@ def main():
     train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True, num_workers=2, drop_last=True)
     val_loader = DataLoader(val_ds, batch_size=BATCH, shuffle=False, num_workers=2)
 
-    print(f'Train: {len(train_ds)}, Val: {len(val_ds)}')
-    print(f'Train batches: {len(train_loader)}, Val batches: {len(val_loader)}')
+    print(f'Train: {len(train_ds)}, Val: {len(val_ds)}', flush=True)
+    print(f'Train batches: {len(train_loader)}, Val batches: {len(val_loader)}', flush=True)
 
     net = NailNet()
     n_params = sum(p.numel() for p in net.parameters())
-    print(f'Model params: {n_params:,} ({n_params/1e6:.2f}M)')
-
-    # Скачиваем checkpoint из Release
-    print("\n=== Downloading checkpoints from Release ===")
-    download_checkpoint()
+    print(f'Model params: {n_params:,} ({n_params/1e6:.2f}M)', flush=True)
 
     # Resume from checkpoint
     start_epoch = 0
@@ -221,33 +185,41 @@ def main():
     history = []
 
     if os.path.exists(os.path.join(HERE, 'checkpoint.pt')):
+        print('Loading checkpoint.pt...', flush=True)
         ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu')
         net.load_state_dict(ckpt['model'])
         start_epoch = ckpt['epoch'] + 1
         best = ckpt.get('best_iou', 0.0)
-        print(f'Resumed from checkpoint.pt at epoch {start_epoch}, best IoU={best:.4f}')
+        print(f'Resumed from checkpoint at epoch {start_epoch}, best IoU={best:.4f}', flush=True)
+        
+        # Load metrics history
+        if os.path.exists(os.path.join(HERE, 'metrics.json')):
+            with open(os.path.join(HERE, 'metrics.json')) as f:
+                prev = json.load(f)
+            if 'epochs' in prev:
+                history = prev['epochs']
+                print(f'Loaded {len(history)} previous epochs from metrics.json', flush=True)
+    elif os.path.exists(os.path.join(HERE, 'best.pt')):
+        net.load_state_dict(torch.load(os.path.join(HERE, 'best.pt'), map_location='cpu'))
+        print('Loaded best.pt (no checkpoint, starting from epoch 1)', flush=True)
 
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=1e-4)
     if os.path.exists(os.path.join(HERE, 'checkpoint.pt')):
         ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu')
         if 'opt' in ckpt:
             opt.load_state_dict(ckpt['opt'])
+            print('Loaded optimizer state', flush=True)
 
     crit = BCEDiceLoss()
 
-    if os.path.exists(os.path.join(HERE, 'metrics.json')):
-        with open(os.path.join(HERE, 'metrics.json')) as f:
-            prev = json.load(f)
-        if 'epochs' in prev:
-            history = prev['epochs']
-            if best == 0.0:
-                best = prev.get('best_iou', 0.0)
-            print(f'Previous best IoU: {best:.4f}, total epochs: {len(history)}')
+    print(f'\nStarting training from epoch {start_epoch+1} to {EPOCHS}', flush=True)
+    print(f'Timeout: {TIMEOUT_MIN} minutes', flush=True)
+    print(flush=True)
 
     for epoch in range(start_epoch, EPOCHS):
         elapsed_min = (time.time() - START_TIME) / 60
         if elapsed_min > TIMEOUT_MIN:
-            print(f'Timeout at {elapsed_min:.1f} min, saving and exiting')
+            print(f'Timeout at {elapsed_min:.1f} min, saving and exiting', flush=True)
             break
 
         t0 = time.time()
@@ -300,7 +272,7 @@ def main():
         with open(os.path.join(HERE, 'metrics.json'), 'w') as f:
             json.dump({'best_iou': best, 'epochs': history}, f, indent=2)
 
-    print(f'\nBest IoU: {best:.4f}')
+    print(f'\nBest IoU: {best:.4f}', flush=True)
     with open(os.path.join(HERE, 'metrics.json'), 'w') as f:
         json.dump({'best_iou': best, 'epochs': history}, f, indent=2)
 
