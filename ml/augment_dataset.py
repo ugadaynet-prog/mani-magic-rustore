@@ -9,7 +9,7 @@ import numpy as np
 random.seed(42)
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-SIZE = 512  # Increased from 256 to 512
+SIZE = 384  # 384x384 — баланс между качеством и памятью
 
 shutil.rmtree('dataset_aug', ignore_errors=True)
 os.makedirs('dataset_aug/images', exist_ok=True)
