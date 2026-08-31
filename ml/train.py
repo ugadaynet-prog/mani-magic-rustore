@@ -184,31 +184,73 @@ def main():
     best = 0.0
     history = []
 
-    if os.path.exists(os.path.join(HERE, 'checkpoint.pt')):
+    checkpoint_path = os.path.join(HERE, 'checkpoint.pt')
+    best_path = os.path.join(HERE, 'best.pt')
+    
+    # Check if checkpoint file is valid (not empty/corrupt)
+    def is_valid_torch_file(path):
+        if not os.path.exists(path):
+            return False
+        if os.path.getsize(path) < 100:
+            return False
+        try:
+            # Try to peek at the file
+            with open(path, 'rb') as f:
+                header = f.read(20)
+                return len(header) >= 2
+        except:
+            return False
+
+    if is_valid_torch_file(checkpoint_path):
         print('Loading checkpoint.pt...', flush=True)
-        ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu', weights_only=False)
-        net.load_state_dict(ckpt['model'])
-        start_epoch = ckpt['epoch'] + 1
-        best = ckpt.get('best_iou', 0.0)
-        print(f'Resumed from checkpoint at epoch {start_epoch}, best IoU={best:.4f}', flush=True)
-        
-        # Load metrics history
-        if os.path.exists(os.path.join(HERE, 'metrics.json')):
-            with open(os.path.join(HERE, 'metrics.json')) as f:
+        try:
+            ckpt = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+            net.load_state_dict(ckpt['model'])
+            start_epoch = ckpt['epoch'] + 1
+            best = ckpt.get('best_iou', 0.0)
+            print(f'Resumed from checkpoint at epoch {start_epoch}, best IoU={best:.4f}', flush=True)
+            
+            # Load optimizer state
+            if 'opt' in ckpt:
+                opt_state = ckpt['opt']
+        except Exception as e:
+            print(f'Failed to load checkpoint.pt: {e}, training from scratch', flush=True)
+            start_epoch = 0
+            best = 0.0
+    elif is_valid_torch_file(best_path):
+        print('Loading best.pt (no checkpoint, starting from epoch 1)...', flush=True)
+        try:
+            net.load_state_dict(torch.load(best_path, map_location='cpu', weights_only=True))
+            print('Loaded best.pt successfully', flush=True)
+        except Exception as e:
+            print(f'Failed to load best.pt: {e}, training from scratch', flush=True)
+    else:
+        print('No valid checkpoint found, training from scratch', flush=True)
+
+    # Load metrics history
+    metrics_path = os.path.join(HERE, 'metrics.json')
+    if os.path.exists(metrics_path) and os.path.getsize(metrics_path) > 10:
+        try:
+            with open(metrics_path) as f:
                 prev = json.load(f)
             if 'epochs' in prev:
                 history = prev['epochs']
+                if best == 0.0:
+                    best = prev.get('best_iou', 0.0)
                 print(f'Loaded {len(history)} previous epochs from metrics.json', flush=True)
-    elif os.path.exists(os.path.join(HERE, 'best.pt')):
-        net.load_state_dict(torch.load(os.path.join(HERE, 'best.pt'), map_location='cpu', weights_only=True))
-        print('Loaded best.pt (no checkpoint, starting from epoch 1)', flush=True)
+        except Exception as e:
+            print(f'Failed to load metrics.json: {e}', flush=True)
+            history = []
 
     opt = torch.optim.AdamW(net.parameters(), lr=LR, weight_decay=1e-4)
-    if os.path.exists(os.path.join(HERE, 'checkpoint.pt')):
-        ckpt = torch.load(os.path.join(HERE, 'checkpoint.pt'), map_location='cpu', weights_only=False)
-        if 'opt' in ckpt:
-            opt.load_state_dict(ckpt['opt'])
-            print('Loaded optimizer state', flush=True)
+    if is_valid_torch_file(checkpoint_path):
+        try:
+            ckpt = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
+            if 'opt' in ckpt:
+                opt.load_state_dict(ckpt['opt'])
+                print('Loaded optimizer state', flush=True)
+        except:
+            pass
 
     crit = BCEDiceLoss()
 
