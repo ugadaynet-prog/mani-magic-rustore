@@ -1,7 +1,6 @@
 name: Train nail segmentation
 
-# Только вручную. Обучение не имеет отношения к сборке приложения и не должно
-# запускаться от каждого пуша — иначе оно будет драться за очередь с .aab.
+# Запускается вручную. Продолжает обучение с checkpoint, если он есть.
 on:
   workflow_dispatch:
     inputs:
@@ -9,10 +8,10 @@ on:
         description: 'Сколько эпох (по умолчанию 150)'
         required: false
         default: '150'
-      continue_from_artifact:
-        description: 'Продолжить из предыдущего артефакта (true/false)'
+      start_epoch:
+        description: 'С какой эпохи продолжить (по умолчанию 0 = с нуля)'
         required: false
-        default: 'true'
+        default: '0'
 
 jobs:
   train:
@@ -36,39 +35,25 @@ jobs:
           pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
           pip install numpy pillow onnx onnxruntime onnxscript
 
-      # Скачиваем предыдущий артефакт, чтобы продолжить обучение с чекпоинта
-      - name: Скачать предыдущий чекпоинт
-        if: ${{ github.event.inputs.continue_from_artifact == 'true' }}
+      - name: Скачать checkpoint из ветки model-checkpoints
+        continue-on-error: true
         run: |
-          echo "Скачиваю предыдущий артефакт nail-model..."
-          # Получаем список артефактов и находим nail-model
-          ARTIFACT_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/artifacts?per_page=10" \
-            | python3 -c "
-          import sys, json
-          data = json.load(sys.stdin)
-          for a in data.get('artifacts', []):
-            if a['name'] == 'nail-model' and not a['expired']:
-              print(a['id'])
-              break
-          ")
-          if [ -z "$ARTIFACT_ID" ]; then
-            echo "Предыдущий артефакт не найден — начинаем с нуля"
-          else
-            echo "Найден артефакт id=$ARTIFACT_ID, скачиваю..."
-            curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -o checkpoint.zip \
-              "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$ARTIFACT_ID/zip"
-            unzip -o checkpoint.zip
-            rm checkpoint.zip
-            ls -la best.pt checkpoint.pt metrics.json 2>/dev/null || true
-            echo "Чекпоинт готов для продолжения обучения"
-          fi
+          echo "Downloading best.pt and checkpoint.pt from model-checkpoints branch..."
+          curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/contents/ml/best.pt?ref=model-checkpoints" \
+            | python -c "import sys,json,base64; d=json.load(sys.stdin); open('best.pt','wb').write(base64.b64decode(d['content']))" || true
+          curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/contents/ml/checkpoint.pt?ref=model-checkpoints" \
+            | python -c "import sys,json,base64; d=json.load(sys.stdin); open('checkpoint.pt','wb').write(base64.b64decode(d['content']))" || true
+          curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/contents/ml/metrics.json?ref=model-checkpoints" \
+            | python -c "import sys,json,base64; d=json.load(sys.stdin); open('metrics.json','w').write(base64.b64decode(d['content']).decode())" || true
+          ls -la best.pt checkpoint.pt metrics.json 2>/dev/null || true
 
       - name: Подготовить данные
         run: python prepare.py
 
-      - name: Обучить
+      - name: Обучить (продолжить с checkpoint)
         env:
           EPOCHS: ${{ github.event.inputs.epochs }}
         run: python train.py
