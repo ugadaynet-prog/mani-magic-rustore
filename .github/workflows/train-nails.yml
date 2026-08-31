@@ -1,6 +1,7 @@
 name: Train nail segmentation
 
-# Запускается вручную. Продолжает обучение с checkpoint, если он есть.
+# Только вручную. Обучение не имеет отношения к сборке приложения и не должно
+# запускаться от каждого пуша — иначе оно будет драться за очередь с .aab.
 on:
   workflow_dispatch:
     inputs:
@@ -8,10 +9,6 @@ on:
         description: 'Сколько эпох (по умолчанию 150)'
         required: false
         default: '150'
-      start_epoch:
-        description: 'С какой эпохи продолжить (по умолчанию 0 = с нуля)'
-        required: false
-        default: '0'
 
 jobs:
   train:
@@ -35,25 +32,24 @@ jobs:
           pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
           pip install numpy pillow onnx onnxruntime onnxscript
 
-      - name: Скачать checkpoint из ветки model-checkpoints
-        continue-on-error: true
+      - name: Скачать чекпоинт предыдущего обучения
         run: |
-          echo "Downloading best.pt and checkpoint.pt from model-checkpoints branch..."
-          curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/contents/ml/best.pt?ref=model-checkpoints" \
-            | python -c "import sys,json,base64; d=json.load(sys.stdin); open('best.pt','wb').write(base64.b64decode(d['content']))" || true
-          curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/contents/ml/checkpoint.pt?ref=model-checkpoints" \
-            | python -c "import sys,json,base64; d=json.load(sys.stdin); open('checkpoint.pt','wb').write(base64.b64decode(d['content']))" || true
-          curl -sL -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/contents/ml/metrics.json?ref=model-checkpoints" \
-            | python -c "import sys,json,base64; d=json.load(sys.stdin); open('metrics.json','w').write(base64.b64decode(d['content']).decode())" || true
-          ls -la best.pt checkpoint.pt metrics.json 2>/dev/null || true
+          # Если в репозитории есть best.pt и checkpoint.pt — используем их для resume
+          if [ -f best.pt ]; then
+            echo "Found best.pt in repo — will resume training"
+            ls -lh best.pt
+          else
+            echo "No checkpoint found — training from scratch"
+          fi
+          if [ -f checkpoint.pt ]; then
+            echo "Found checkpoint.pt in repo"
+            ls -lh checkpoint.pt
+          fi
 
       - name: Подготовить данные
         run: python prepare.py
 
-      - name: Обучить (продолжить с checkpoint)
+      - name: Обучить
         env:
           EPOCHS: ${{ github.event.inputs.epochs }}
         run: python train.py
@@ -62,6 +58,32 @@ jobs:
         run: python export.py
         continue-on-error: true
 
+      - name: Сохранить обновлённый чекпоинт в репозиторий
+        if: success()
+        run: |
+          # Configure git
+          cd /home/runner/work/mani-magic-rustore/mani-magic-rustore/rustore-app
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Copy checkpoint files back to ml/
+          if [ -f ml/best.pt ]; then
+            cp ml/best.pt ml/best.pt
+          fi
+          if [ -f ml/checkpoint.pt ]; then
+            cp ml/checkpoint.pt ml/checkpoint.pt
+          fi
+          
+          git add ml/best.pt ml/checkpoint.pt ml/metrics.json 2>/dev/null || true
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update checkpoint after training [skip ci]"
+            git push
+            echo "Checkpoint pushed to repo"
+          fi
+
+      # Сохраняем ДАЖЕ если экспорт упал
       - uses: actions/upload-artifact@v4
         if: always()
         with:
