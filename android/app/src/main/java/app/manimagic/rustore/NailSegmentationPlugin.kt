@@ -18,20 +18,20 @@ import java.nio.FloatBuffer
  * Нативный плагин сегментации ногтей.
  *
  * JavaScript вызывает: Capacitor.Plugins.NailSegmentation.segment({ image: "<jpeg-dataUrl>" })
- * Плагин возвращает:   { mask: "<png-dataUrl grayscale 256×256>", elapsedMs: <number> }
+ * Плагин возвращает:   { mask: "<png-dataUrl grayscale 384×384>", elapsedMs: <number> }
  *
  * Модель загружается один раз лениво при первом вызове segment() и хранится
  * в статическом поле — пережива перезапуски WebView без повторной загрузки.
  *
- * Входной тензор: float32[1, 3, 256, 256], значения 0..1, порядок CHW.
- * Выходной тензор: float32[1, 1, 256, 256], сырые логиты (до сигмоиды).
+ * Входной тензор: float32[1, 3, 384, 384], значения 0..1, порядок CHW.
+ * Выходной тензор: float32[1, 1, 384, 384], сырые логиты (до сигмоиды).
  */
 @CapacitorPlugin(name = "NailSegmentation")
 class NailSegmentationPlugin : Plugin() {
 
     companion object {
         private const val MODEL_ASSET = "models/nail-unet.onnx"
-        private const val INPUT_SIZE = 256
+        private const val INPUT_SIZE = 384
 
         @Volatile private var ortEnv: OrtEnvironment? = null
         @Volatile private var ortSession: OrtSession? = null
@@ -76,11 +76,11 @@ class NailSegmentationPlugin : Plugin() {
                 val srcBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
                     ?: throw IllegalArgumentException("Не удалось декодировать изображение")
 
-                // 2. Масштабируем в квадрат 256×256 с вписыванием (letterbox)
+                // 2. Масштабируем в квадрат 384×384 с вписыванием (letterbox)
                 val inputBitmap = letterboxBitmap(srcBitmap, INPUT_SIZE)
                 srcBitmap.recycle()
 
-                // 3. Конвертируем пиксели → float32[1,3,256,256] CHW, 0..1
+                // 3. Конвертируем пиксели → float32[1,3,384,384] CHW, 0..1
                 val tensor = bitmapToTensor(inputBitmap)
                 inputBitmap.recycle()
 
@@ -94,11 +94,11 @@ class NailSegmentationPlugin : Plugin() {
                 val results = session.run(mapOf(inputName to inputTensor))
                 val outputName = session.outputNames.iterator().next()
 
-                // Модель возвращает 4D тензор float[1][1][256][256].
-                // "Разворачиваем" его в плоский FloatArray длиной 256*256 = 65536.
+                // Модель возвращает 4D тензор float[1][1][384][384].
+                // "Разворачиваем" его в плоский FloatArray длиной 384*384 = 65536.
                 @Suppress("UNCHECKED_CAST")
                 val logits4d = (results[outputName].get().value as Array<Array<Array<FloatArray>>>)
-                val logits2d = logits4d[0][0]                          // float[256][256]
+                val logits2d = logits4d[0][0]                          // float[384][384]
                 val flatLogits = FloatArray(INPUT_SIZE * INPUT_SIZE)   // 65536
                 for (row in 0 until INPUT_SIZE) {
                     System.arraycopy(logits2d[row], 0, flatLogits, row * INPUT_SIZE, INPUT_SIZE)
@@ -107,7 +107,7 @@ class NailSegmentationPlugin : Plugin() {
                 inputTensor.close()
                 results.close()
 
-                // 5. Сигмоида → grayscale bitmap 256×256
+                // 5. Сигмоида → grayscale bitmap 384×384
                 val maskBitmap = logitsToBitmap(flatLogits)
 
                 // 6. Кодируем PNG в base64
@@ -158,7 +158,7 @@ class NailSegmentationPlugin : Plugin() {
         return buf
     }
 
-    // Логиты 256×256 → grayscale Bitmap: яркость пикселя = вероятность * 255
+    // Логиты 384×384 → grayscale Bitmap: яркость пикселя = вероятность * 255
     private fun logitsToBitmap(logits: FloatArray): Bitmap {
         val bmp = Bitmap.createBitmap(INPUT_SIZE, INPUT_SIZE, Bitmap.Config.ARGB_8888)
         val pixels = IntArray(INPUT_SIZE * INPUT_SIZE)
