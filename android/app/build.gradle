@@ -65,8 +65,8 @@ dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlinVersion"
 
     // RuStore Pay SDK — нативный биллинг подписки (см. RuStoreBillingPlugin.kt)
-    // implementation(platform("ru.rustore.sdk:bom:2026.07.01"))  // temporarily disabled - RuStore maven 404
-    // implementation("ru.rustore.sdk:pay")  // temporarily disabled - RuStore maven 404
+    implementation(platform("ru.rustore.sdk:bom:2026.07.01"))
+    implementation("ru.rustore.sdk:pay")
 
     // ONNX Runtime Android — нативный инференс модели сегментации ногтей.
     // Версия 1.20.0 поддерживает minSdk 24 и не тащит WASM.
