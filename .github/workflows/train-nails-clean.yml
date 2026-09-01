@@ -1,0 +1,181 @@
+name: Train nail segmentation (clean data)
+
+# Обучение только на данных, которые мы вправе использовать: 52 фото под CC0
+# от vpapenko и работы нашей колоды, размеченные MobileSAM. Подробнее — в
+# ml/PROVENANCE.md.
+#
+# Чем отличается от train-nails.yml:
+#   1. Данные собирает prepare_clean.py, а не prepare_dataset.py с шестью
+#      источниками, пять из которых без лицензии.
+#   2. Учится С НУЛЯ. Дообучать поверх старых весов нельзя: они выведены из
+#      нелицензионных наборов, и дообучение этого не смывает.
+#   3. Шага раздувания dataset_aug нет. Повороты и осветления train.py делает
+#      на лету, а пятнадцать копий каждого кадра файлами удлиняли эпоху в
+#      пятнадцать раз: 900 секунд вместо 33, и 19 эпох за пять часов вместо
+#      четырёхсот.
+#
+# Чекпоинты кладутся в релиз try-on-v2 с суффиксом -clean, чтобы не смешивать
+# их со старыми, грязными.
+on:
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: 'Сколько эпох (по умолчанию 400)'
+        required: false
+        default: '400'
+      resume:
+        description: 'Продолжить с чистого чекпоинта (yes/no)'
+        required: false
+        default: 'no'
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    permissions:
+      contents: write
+    env:
+      REPO: ugadaynet-prog/mani-magic-rustore
+      RELEASE_TAG: try-on-v2
+    defaults:
+      run:
+        working-directory: rustore-app/ml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rustore-app
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Поставить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          pip install numpy pillow onnx onnxruntime onnxscript
+
+      # Колода лежит в релизе зашифрованной: репозиторий публичный, а это
+      # содержимое приложения. Скачать архив может кто угодно, распаковать —
+      # только тот, у кого есть ключ из секрета DECK_KEY.
+      - name: Забрать размеченную колоду из Release и расшифровать
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DECK_KEY: ${{ secrets.DECK_KEY }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, urllib.request
+          tok = os.environ['GH_TOKEN']
+          url = f"https://api.github.com/repos/{os.environ['REPO']}/releases/tags/{os.environ['RELEASE_TAG']}"
+          req = urllib.request.Request(url, headers={'Authorization': f'token {tok}'})
+          rel = json.load(urllib.request.urlopen(req))
+          for a in rel.get('assets', []):
+              if a['name'] == 'deck-dataset.zip.enc':
+                  print(f"Нашёл deck-dataset.zip.enc ({a['size']/1e6:.1f} МБ)")
+                  r = urllib.request.Request(a['url'], headers={
+                      'Authorization': f'token {tok}',
+                      'Accept': 'application/octet-stream'})
+                  with urllib.request.urlopen(r) as src, open('deck-dataset.zip.enc', 'wb') as out:
+                      out.write(src.read())
+                  break
+          else:
+              print('зашифрованной колоды в релизе нет — учимся на одном CC0')
+          EOF
+
+          if [ -f deck-dataset.zip.enc ]; then
+            if [ -z "$DECK_KEY" ]; then
+              echo "::error::В релизе есть колода, но секрет DECK_KEY пуст — расшифровать нечем."
+              exit 1
+            fi
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+              -in deck-dataset.zip.enc -out deck-dataset.zip -pass env:DECK_KEY
+            echo "Расшифровано: $(stat -c%s deck-dataset.zip) байт"
+          fi
+
+      - name: Продолжить с чистого чекпоинта
+        if: ${{ github.event.inputs.resume == 'yes' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, urllib.request
+          tok = os.environ['GH_TOKEN']
+          url = f"https://api.github.com/repos/{os.environ['REPO']}/releases/tags/{os.environ['RELEASE_TAG']}"
+          req = urllib.request.Request(url, headers={'Authorization': f'token {tok}'})
+          rel = json.load(urllib.request.urlopen(req))
+          want = {'best-clean.pt': 'best.pt', 'checkpoint-clean.pt': 'checkpoint.pt'}
+          for a in rel.get('assets', []):
+              if a['name'] in want:
+                  r = urllib.request.Request(a['url'], headers={
+                      'Authorization': f'token {tok}',
+                      'Accept': 'application/octet-stream'})
+                  with urllib.request.urlopen(r) as src, open(want[a['name']], 'wb') as out:
+                      out.write(src.read())
+                  print(f"Взял {a['name']} -> {want[a['name']]}")
+          EOF
+
+      - name: Убрать грязные веса, если они лежат в репозитории
+        run: rm -f best.pt checkpoint.pt metrics.json || true
+        if: ${{ github.event.inputs.resume != 'yes' }}
+
+      - name: Собрать чистый набор
+        run: python prepare_clean.py
+
+      - name: Обучить
+        env:
+          EPOCHS: ${{ github.event.inputs.epochs }}
+        run: python train.py
+
+      - name: Экспорт в ONNX
+        run: python export.py
+        continue-on-error: true
+
+      - name: Сохранить результат в Release
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_ID=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "Release ID: $RELEASE_ID"
+
+          upload_asset() {
+            local file="$1" name="$2"
+            [ -f "$file" ] || { echo "  $file нет, пропускаю"; return 0; }
+            echo "  Загружаю $file как $name..."
+            OLD_ID=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/releases/$RELEASE_ID/assets" \
+              | python3 -c "
+          import sys,json
+          for a in json.load(sys.stdin):
+              if a['name']=='$name':
+                  print(a['id']); break
+          ")
+            [ -n "$OLD_ID" ] && curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/releases/assets/$OLD_ID" >/dev/null
+            CODE=$(curl -s -o /tmp/up.json -w "%{http_code}" -X POST \
+              -H "Authorization: token $GH_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$file" \
+              "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$name")
+            if [ "$CODE" = "201" ]; then echo "    готово"; else echo "    ошибка HTTP $CODE"; cat /tmp/up.json; fi
+          }
+
+          upload_asset "best.pt" "best-clean.pt"
+          upload_asset "checkpoint.pt" "checkpoint-clean.pt"
+          upload_asset "metrics.json" "metrics-clean.json"
+          upload_asset "nail-unet.onnx" "nail-unet-clean.onnx"
+          upload_asset "dataset_merged/manifest.json" "dataset-manifest-clean.json"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nail-model-clean
+          path: |
+            rustore-app/ml/nail-unet.onnx
+            rustore-app/ml/metrics.json
+            rustore-app/ml/best.pt
+            rustore-app/ml/checkpoint.pt
+            rustore-app/ml/dataset_merged/manifest.json
+          if-no-files-found: warn

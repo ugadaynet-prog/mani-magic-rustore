@@ -4,3 +4,12 @@ __pycache__/
 ours.zip
 hand_landmarker.task
 pseudo.png
+
+# Рабочие каталоги сборки набора — собираются скриптами, в репозитории не нужны
+dataset_merged/
+dataset_aug/
+deck_dataset/
+vpapenko.zip
+deck-dataset.zip
+mobile_sam.pt
+out/
