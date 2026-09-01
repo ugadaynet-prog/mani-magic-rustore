@@ -94,8 +94,8 @@
 
   // Вычисляет геометрию letterbox (та же, что в нативном плагине).
   function computeGeometry(w,h){
-    const side=Math.max(w,h), scale=256/side;
-    return { w, h, dw:w*scale, dh:h*scale, ox:(256-w*scale)/2, oy:(256-h*scale)/2 };
+    const side=Math.max(w,h), scale=384/side;
+    return { w, h, dw:w*scale, dh:h*scale, ox:(384-w*scale)/2, oy:(384-h*scale)/2 };
   }
 
   async function recognize(){
@@ -109,11 +109,11 @@
       const { dataUrl, w, h } = toJpegDataUrl(sourceImage);
       geometry = computeGeometry(w, h);
 
-      // Вызов нативного плагина: передаём JPEG dataURL, получаем PNG-маску 256×256.
+      // Вызов нативного плагина: передаём JPEG dataURL, получаем PNG-маску 384×384.
       const result = await NailSeg.segment({ image: dataUrl });
       const maskDataUrl = result.mask;
 
-      // Декодируем PNG-маску в probabilities (Float32Array 256×256).
+      // Декодируем PNG-маску в probabilities (Float32Array 384×384).
       probabilities = await decodeMaskToProbabilities(maskDataUrl);
       render();
       setStatus(ui.status, `Готово за ${result.elapsedMs || Math.round(performance.now()-started)} мс`, 'ok');
@@ -130,17 +130,17 @@
     } finally { ui.busy.classList.add('hidden'); }
   }
 
-  // Загружает PNG-маску (grayscale 256×256) и возвращает массив вероятностей 0..1.
+  // Загружает PNG-маску (grayscale 384×384) и возвращает массив вероятностей 0..1.
   function decodeMaskToProbabilities(maskDataUrl){
     return new Promise((resolve,reject)=>{
       const img=new Image();
       img.onload=()=>{
         const c=document.createElement('canvas');
-        c.width=c.height=256;
+        c.width=c.height=384;
         const x=c.getContext('2d',{willReadFrequently:true});
-        x.drawImage(img,0,0,256,256);
-        const p=x.getImageData(0,0,256,256).data;
-        const probs=new Float32Array(256*256);
+        x.drawImage(img,0,0,384,384);
+        const p=x.getImageData(0,0,384,384).data;
+        const probs=new Float32Array(384*384);
         for(let i=0;i<probs.length;i++) probs[i]=p[4*i]/255;
         resolve(probs);
       };
@@ -150,7 +150,7 @@
   }
 
   function maskCanvas(){
-    const t=+ui.threshold.value,net=document.createElement('canvas');net.width=net.height=256;const x=net.getContext('2d'),im=x.createImageData(256,256);
+    const t=+ui.threshold.value,net=document.createElement('canvas');net.width=net.height=384;const x=net.getContext('2d'),im=x.createImageData(384,384);
     for(let i=0;i<probabilities.length;i++){const v=probabilities[i]>t?255:0;im.data[4*i]=im.data[4*i+1]=im.data[4*i+2]=v;im.data[4*i+3]=255;}x.putImageData(im,0,0);
     const m=document.createElement('canvas');m.width=geometry.w;m.height=geometry.h;m.getContext('2d').drawImage(net,geometry.ox,geometry.oy,geometry.dw,geometry.dh,0,0,m.width,m.height);return m;
   }
