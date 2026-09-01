@@ -224,31 +224,67 @@ def main():
     src_mask = os.path.join(HERE, 'dataset_merged', 'masks')
     manifest = os.path.join(HERE, 'dataset_aug', 'sources.json')
 
-    if not os.path.exists(aug_img):
-        raise SystemExit('dataset_aug/ not found. Run prepare.py first.')
-    if not os.path.exists(manifest):
-        raise SystemExit('dataset_aug/sources.json not found. Re-run augment_dataset.py.')
+    if not os.path.exists(src_img):
+        raise SystemExit('dataset_merged/ not found. Run prepare.py first.')
 
     # Делим по ИСХОДНЫМ фото, а не по файлам. Если делить по файлам, повороты и
     # осветления одного снимка попадают и в обучение, и в проверку — модель
     # проверяется на почти-копиях того, что учила, и IoU выходит завышенным.
     # Проверяем на ОРИГИНАЛАХ отложенных снимков, а не на их аугментациях.
-    with open(manifest, encoding='utf-8') as f:
-        sources = json.load(f)
-    src_ids = sorted(sources)
+    src_files = sorted(f for f in os.listdir(src_img)
+                       if f.lower().endswith(('.jpg', '.jpeg', '.png')))
     rng = np.random.default_rng(SEED)
-    perm = rng.permutation(len(src_ids))
-    val_ids = {src_ids[i] for i in perm[:VAL_SRC].tolist()}
 
-    aug_files = sorted(f for f in os.listdir(aug_img)
-                       if f.lower().endswith(('.jpg', '.png')))
-    train_files = [f for f in aug_files if f.split('_')[0] not in val_ids]
-    val_files = [sources[i] for i in sorted(val_ids)]
+    # Доля отложенных, а не фиксированное число: на наборе из 51 кадра прежняя
+    # константа 40 отправляла в проверку четыре пятых набора, и учиться было
+    # уже не на чем.
+    val_n = max(10, min(VAL_SRC, round(0.15 * len(src_files))))
 
-    print(f'Sources: {len(src_ids)}, held out: {len(val_files)}', flush=True)
-    print(f'Train files: {len(train_files)} (augmented copies of train sources)', flush=True)
+    groups_path = os.path.join(HERE, 'dataset_merged', 'groups.json')
+    if os.path.exists(groups_path):
+        # Откладываем связанные кадры целиком. Пять работ одной карты сняты
+        # по-разному, но принадлежат одной цветовой семье: разведи их между
+        # обучением и проверкой — и IoU выйдет завышенным.
+        with open(groups_path, encoding='utf-8') as f:
+            groups = json.load(f)
+        by_group = {}
+        for fn in src_files:
+            by_group.setdefault(groups.get(fn, fn), []).append(fn)
+        keys = sorted(by_group)
+        val_files = []
+        for i in rng.permutation(len(keys)).tolist():
+            if len(val_files) >= val_n:
+                break
+            val_files.extend(by_group[keys[i]])
+        val_files.sort()
+        print(f'Групп: {len(keys)}, отложено групп: '
+              f'{len({groups.get(f, f) for f in val_files})}', flush=True)
+    else:
+        perm = rng.permutation(len(src_files))
+        val_files = [src_files[i] for i in sorted(perm[:val_n].tolist())]
+    val_set = set(val_files)
 
-    train_ds = NailDataset(aug_img, aug_mask, SIZE, files=train_files,
+    if os.path.exists(aug_img) and os.path.exists(manifest):
+        # Старый путь: копии кадров лежат файлами в dataset_aug/, имя хранит
+        # номер исходного фото. Оставлен ради совместимости со старым набором.
+        with open(manifest, encoding='utf-8') as f:
+            sources = json.load(f)
+        val_ids = {i for i in sources if sources[i] in val_set}
+        train_img, train_mask = aug_img, aug_mask
+        train_files = [f for f in sorted(os.listdir(aug_img))
+                       if f.lower().endswith(('.jpg', '.png'))
+                       and f.split('_')[0] not in val_ids]
+    else:
+        # Основной путь: учимся прямо на исходных кадрах. Повороты, осветления
+        # и синтез тёмного делает NailDataset на лету — заранее размноженные
+        # копии не добавляют информации, а эпоху удлиняют в пятнадцать раз.
+        train_img, train_mask = src_img, src_mask
+        train_files = [f for f in src_files if f not in val_set]
+
+    print(f'Sources: {len(src_files)}, held out: {len(val_files)}', flush=True)
+    print(f'Train files: {len(train_files)}', flush=True)
+
+    train_ds = NailDataset(train_img, train_mask, SIZE, files=train_files,
                            augment=True, dark_p=DARK_P)
     val_ds = NailDataset(src_img, src_mask, SIZE, files=val_files, augment=False)
     # Те же отложенные, но с тёмным лаком. Без этой метрики прирост не виден:
