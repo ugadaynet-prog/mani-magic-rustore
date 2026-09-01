@@ -2,7 +2,7 @@
 Augmentation v2: expands dataset_merged/ by 15x (rotations, flips, brightness, contrast, sharpness, color, perspective, noise)
 Output: dataset_aug/images/ and dataset_aug/masks/ at 512x512 resolution.
 """
-import os, shutil, random
+import json, os, shutil, random
 from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
 
@@ -46,19 +46,31 @@ augs = [
     ('hue_minus', lambda i,m: (adjust_hue(i, -0.05), m)),
 ]
 
+# Имя файла хранит НОМЕР ИСХОДНОГО ФОТО: 00012_07.jpg — это седьмая копия
+# двенадцатого снимка. Без этого копии одного кадра не отличить друг от друга,
+# и при делении выборки повороты того же фото попадают и в обучение, и в
+# проверку — модель проверяется на почти-копиях того, что учила, и IoU выходит
+# завышенным. Раньше имена были сквозными (00001, 00002…), и связь терялась.
 count = 0
 img_dir = 'dataset_merged/images'
 mask_dir = 'dataset_merged/masks'
-for fname in sorted(os.listdir(img_dir)):
+sources = sorted(os.listdir(img_dir))
+manifest = {}
+for src_idx, fname in enumerate(sources):
     mask_name = fname.replace('.jpg', '.png').replace('.jpeg', '.png')
     img = Image.open(f'{img_dir}/{fname}').convert('RGB').resize((SIZE, SIZE), Image.BILINEAR)
     mask = Image.open(f'{mask_dir}/{mask_name}').convert('L').resize((SIZE, SIZE), Image.NEAREST)
     mask_arr = np.where(np.array(mask) > 127, 255, 0).astype(np.uint8)
     mask = Image.fromarray(mask_arr, mode='L')
-    for name, fn in augs:
+    manifest[f'{src_idx:05d}'] = fname
+    for var_idx, (name, fn) in enumerate(augs):
         ai, am = fn(img, mask)
-        ai.save(f'dataset_aug/images/{count:05d}.jpg', quality=95)
-        am.save(f'dataset_aug/masks/{count:05d}.png')
+        stem = f'{src_idx:05d}_{var_idx:02d}'
+        ai.save(f'dataset_aug/images/{stem}.jpg', quality=95)
+        am.save(f'dataset_aug/masks/{stem}.png')
         count += 1
 
-print(f'After augmentation (15x): {count} images at {SIZE}x{SIZE}')
+with open('dataset_aug/sources.json', 'w', encoding='utf-8') as f:
+    json.dump(manifest, f, ensure_ascii=False, indent=1)
+
+print(f'After augmentation ({len(augs)}x): {count} images from {len(sources)} sources at {SIZE}x{SIZE}')

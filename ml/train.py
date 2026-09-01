@@ -8,6 +8,8 @@ import os
 import time
 
 import numpy as np
+
+import synth
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,7 +20,8 @@ from PIL import Image, ImageEnhance, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SIZE = 384           # 384x384 — больше деталей (было 256)
-VAL_N = 15
+VAL_SRC = 40      # отложенных ИСХОДНЫХ фото (со всеми их копиями)
+DARK_P = 0.35     # доля пачки, которой меняем цвет лака на тёмный
 EPOCHS = int(os.environ.get('EPOCHS', 150))
 BATCH = 4            # Уменьшен с 8 до 4 (384x384 = 2.25x больше пикселей)
 LR = 3e-4
@@ -93,17 +96,26 @@ class NailNet(nn.Module):
 
 # ----------------------------------------------------- Dataset: ленивая загрузка
 class NailDataset(Dataset):
-    def __init__(self, img_dir, mask_dir, size=384, indices=None, augment=False):
+    def __init__(self, img_dir, mask_dir, size=384, indices=None, augment=False,
+                 files=None, dark_p=0.0, dark_seed=None):
         self.img_dir = img_dir
         self.mask_dir = mask_dir
         self.size = size
         self.augment = augment
-        all_files = sorted(f for f in os.listdir(img_dir)
-                           if f.lower().endswith(('.jpg', '.jpeg', '.png')))
-        if indices is not None:
-            self.files = [all_files[i] for i in indices]
+        # Синтез тёмного маникюра: меняем цвет ВНУТРИ маски, маска остаётся
+        # верной. В наборах тёмного лака почти нет, и модель на нём слепа —
+        # это единственный способ добрать такие примеры без разметки.
+        self.dark_p = dark_p
+        self.dark_seed = dark_seed
+        if files is not None:
+            self.files = list(files)
         else:
-            self.files = all_files
+            all_files = sorted(f for f in os.listdir(img_dir)
+                               if f.lower().endswith(('.jpg', '.jpeg', '.png')))
+            if indices is not None:
+                self.files = [all_files[i] for i in indices]
+            else:
+                self.files = all_files
 
     def __len__(self):
         return len(self.files)
@@ -116,6 +128,17 @@ class NailDataset(Dataset):
 
         img = img.resize((self.size, self.size), Image.BILINEAR)
         mask = mask.resize((self.size, self.size), Image.NEAREST)
+
+        if self.dark_p > 0:
+            # Для отложенных зерно привязано к номеру кадра: цвет один и тот же
+            # от прогона к прогону, иначе метрику не с чем сравнивать.
+            rng = (np.random.default_rng(self.dark_seed + idx)
+                   if self.dark_seed is not None else np.random.default_rng())
+            if rng.random() < self.dark_p:
+                arr = np.asarray(img, dtype=np.float32) / 255.0
+                m = (np.asarray(mask) > 127).astype(np.float32)
+                arr = synth.recolor(arr, m, synth.targets(1, rng)[0])
+                img = Image.fromarray((arr * 255).astype(np.uint8))
 
         if self.augment:
             # Расширенная аугментация
@@ -195,25 +218,47 @@ def iou(preds, targets, thresh=0.5):
 
 
 def main():
-    img_dir = os.path.join(HERE, 'dataset_aug', 'images')
-    mask_dir = os.path.join(HERE, 'dataset_aug', 'masks')
+    aug_img = os.path.join(HERE, 'dataset_aug', 'images')
+    aug_mask = os.path.join(HERE, 'dataset_aug', 'masks')
+    src_img = os.path.join(HERE, 'dataset_merged', 'images')
+    src_mask = os.path.join(HERE, 'dataset_merged', 'masks')
+    manifest = os.path.join(HERE, 'dataset_aug', 'sources.json')
 
-    if not os.path.exists(img_dir):
+    if not os.path.exists(aug_img):
         raise SystemExit('dataset_aug/ not found. Run prepare.py first.')
+    if not os.path.exists(manifest):
+        raise SystemExit('dataset_aug/sources.json not found. Re-run augment_dataset.py.')
 
-    n_total = len([f for f in os.listdir(img_dir) if f.lower().endswith(('.jpg', '.png'))])
-    print(f'Total augmented images: {n_total}', flush=True)
-
+    # Делим по ИСХОДНЫМ фото, а не по файлам. Если делить по файлам, повороты и
+    # осветления одного снимка попадают и в обучение, и в проверку — модель
+    # проверяется на почти-копиях того, что учила, и IoU выходит завышенным.
+    # Проверяем на ОРИГИНАЛАХ отложенных снимков, а не на их аугментациях.
+    with open(manifest, encoding='utf-8') as f:
+        sources = json.load(f)
+    src_ids = sorted(sources)
     rng = np.random.default_rng(SEED)
-    perm = rng.permutation(n_total)
-    val_idx = perm[:VAL_N].tolist()
-    train_idx = perm[VAL_N:].tolist()
+    perm = rng.permutation(len(src_ids))
+    val_ids = {src_ids[i] for i in perm[:VAL_SRC].tolist()}
 
-    train_ds = NailDataset(img_dir, mask_dir, SIZE, train_idx, augment=True)
-    val_ds = NailDataset(img_dir, mask_dir, SIZE, val_idx, augment=False)
+    aug_files = sorted(f for f in os.listdir(aug_img)
+                       if f.lower().endswith(('.jpg', '.png')))
+    train_files = [f for f in aug_files if f.split('_')[0] not in val_ids]
+    val_files = [sources[i] for i in sorted(val_ids)]
+
+    print(f'Sources: {len(src_ids)}, held out: {len(val_files)}', flush=True)
+    print(f'Train files: {len(train_files)} (augmented copies of train sources)', flush=True)
+
+    train_ds = NailDataset(aug_img, aug_mask, SIZE, files=train_files,
+                           augment=True, dark_p=DARK_P)
+    val_ds = NailDataset(src_img, src_mask, SIZE, files=val_files, augment=False)
+    # Те же отложенные, но с тёмным лаком. Без этой метрики прирост не виден:
+    # в исходных наборах тёмного маникюра почти нет.
+    val_dark_ds = NailDataset(src_img, src_mask, SIZE, files=val_files,
+                              augment=False, dark_p=1.0, dark_seed=SEED + 1)
 
     train_loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True, num_workers=2, drop_last=True)
     val_loader = DataLoader(val_ds, batch_size=BATCH, shuffle=False, num_workers=2)
+    val_dark_loader = DataLoader(val_dark_ds, batch_size=BATCH, shuffle=False, num_workers=2)
 
     print(f'Train: {len(train_ds)}, Val: {len(val_ds)}', flush=True)
     print(f'Train batches: {len(train_loader)}, Val batches: {len(val_loader)}', flush=True)
@@ -264,7 +309,11 @@ def main():
                 prev = json.load(f)
             if 'epochs' in prev:
                 history = prev['epochs']
-                best = prev.get('best_iou', 0.0)
+                # Старое best_iou НЕ переносим: оно посчитано по прежнему
+                # делению выборки, где в проверку попадали копии обучающих
+                # кадров. С новой честной метрикой оно несравнимо, и если его
+                # взять — best.pt не сохранится уже никогда.
+                best = 0.0
                 print(f'Loaded {len(history)} previous epochs, best IoU={best:.4f}', flush=True)
         except Exception as e:
             print(f'Failed to load metrics.json: {e}', flush=True)
@@ -319,18 +368,28 @@ def main():
                 val_loss_sum += crit(out, y).item()
                 iou_sum += iou(out, y).mean().item()
 
+        dark_sum = 0.0
+        with torch.no_grad():
+            for x, y in val_dark_loader:
+                dark_sum += iou(net(x), y).mean().item()
+
         val_loss = val_loss_sum / len(val_loader)
         val_iou = iou_sum / len(val_loader)
+        dark_iou = dark_sum / len(val_dark_loader)
+        # Лучшую эпоху выбираем по обеим сразу: по одной светлой не видно,
+        # что тёмное так и не нашлось.
+        score = (val_iou + dark_iou) / 2
 
         dt = time.time() - t0
         cur_lr = opt.param_groups[0]['lr']
-        print(f'E{epoch+1:3d}/{EPOCHS} loss={train_loss:.4f} val={val_loss:.4f} IoU={val_iou:.4f} lr={cur_lr:.6f} ({dt:.0f}s, {elapsed_min:.0f}min)', flush=True)
-        history.append({'epoch': epoch+1, 'train_loss': train_loss, 'val_loss': val_loss, 'iou': val_iou, 'lr': cur_lr})
+        print(f'E{epoch+1:3d}/{EPOCHS} loss={train_loss:.4f} val={val_loss:.4f} IoU={val_iou:.4f} IoU_dark={dark_iou:.4f} lr={cur_lr:.6f} ({dt:.0f}s, {elapsed_min:.0f}min)', flush=True)
+        history.append({'epoch': epoch+1, 'train_loss': train_loss, 'val_loss': val_loss,
+                        'iou': val_iou, 'iou_dark': dark_iou, 'score': score, 'lr': cur_lr})
 
-        if val_iou > best:
-            best = val_iou
+        if score > best:
+            best = score
             torch.save(net.state_dict(), best_path)
-            print(f'  saved best.pt (IoU={best:.4f})', flush=True)
+            print(f'  saved best.pt (score={best:.4f}, IoU={val_iou:.4f}, dark={dark_iou:.4f})', flush=True)
 
         if (epoch + 1) % CHECKPOINT_EVERY == 0:
             torch.save({
