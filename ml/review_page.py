@@ -18,6 +18,8 @@ import os
 from PIL import Image
 
 THUMB_W = 210
+# Ниже этой уверенности модели кадр считаем спорным и показываем первым.
+CONF_SUSPECT = 0.85
 
 
 def thumb_data_uri(path, width=THUMB_W, quality=68):
@@ -182,7 +184,7 @@ def build(items, out_path):
             f'{cls} role="button" tabindex="0" aria-pressed="false">'
             f'<img src="{it["uri"]}" alt="{it["id"]}" loading="lazy">'
             f'<figcaption><span class="id">{it["id"]}</span>'
-            f'<span class="n">{it["nails"]}/{it["expected"]}</span></figcaption></figure>')
+            f'<span class="n">{it["note"]}</span></figcaption></figure>')
 
     total = len(items)
     partial = sum(1 for i in items if not i['complete'])
@@ -192,17 +194,17 @@ def build(items, out_path):
   <p>Розовым закрашено то, что разметчик считает ногтем. Кликните по кадру, где
   он ошибся — промахнулся мимо ногтя, залез на кожу или фон, пропустил ноготь,
   который видно. Отмеченные кадры не пойдут в обучение.</p>
-  <p><b>{total}</b> кадров, из них <b>{partial}</b> размечены не полностью —
-  у них подпись красная. Их стоит смотреть первыми: пропущенный ноготь учит
-  модель, что ногтя там нет.</p>
+  <p><b>{total}</b> кадров, из них <b>{partial}</b> спорных — у них подпись
+  красная, и они идут первыми. Порядок не случайный: приёмка почти всегда
+  обрывается на середине, и к этому моменту сомнительное уже просмотрено.</p>
 </header>
 
 <div class="bar">
   <span class="tally">забраковано <b id="cnt">0</b> из {total}</span>
   <div class="seg" role="group" aria-label="Что показывать">
     <button data-filter="all" aria-pressed="true">Все</button>
-    <button data-filter="partial" aria-pressed="false">Неполные</button>
-    <button data-filter="complete" aria-pressed="false">Полные</button>
+    <button data-filter="partial" aria-pressed="false">Спорные</button>
+    <button data-filter="complete" aria-pressed="false">Уверенные</button>
   </div>
   <span class="spacer"></span>
   <button id="clear">Снять все отметки</button>
@@ -289,6 +291,8 @@ def main():
     ap.add_argument('--ds', required=True, help='папка с overlay/ и report.json')
     ap.add_argument('--out', required=True)
     ap.add_argument('--width', type=int, default=THUMB_W)
+    ap.add_argument('--min-conf', type=float, default=0.0,
+                    help='отсеять кадры с уверенностью модели ниже порога')
     args = ap.parse_args()
 
     with open(os.path.join(args.ds, 'report.json'), encoding='utf-8') as f:
@@ -297,16 +301,43 @@ def main():
 
     ov = os.path.join(args.ds, 'overlay')
     items = []
+    # Отсеянные порогом: на страницу не идут, но список сохраняем — без него
+    # потом не объяснить, куда делись кадры.
+    dropped = []
     for name in sorted(os.listdir(ov)):
         key = os.path.splitext(name)[0]
         info = by_file.get(key, {})
+        conf = info.get('conf')
+        # Второй круг размечает моделью и знает, насколько уверен. Тогда
+        # подозрительность считаем по уверенности: она говорит о качестве
+        # больше, чем число найденных пятен. У первого круга её нет — там
+        # смотрим на полноту.
+        if conf is None:
+            suspect = not info.get('complete')
+            note = f"{info.get('nails', '?')}/{info.get('expected', '?')}"
+        else:
+            suspect = conf < CONF_SUSPECT
+            note = f"{conf:.2f}"
+        if conf is not None and conf < args.min_conf:
+            dropped.append(key)
+            continue
         items.append({
             'id': key,
             'uri': thumb_data_uri(os.path.join(ov, name), args.width),
-            'nails': info.get('nails', '?'),
-            'expected': info.get('expected', '?'),
-            'complete': bool(info.get('complete')),
+            'note': note,
+            'sort': conf if conf is not None else 1.0,
+            'complete': not suspect,
         })
+    # Сомнительные — первыми: приёмка почти всегда обрывается на середине,
+    # и лучше, чтобы к этому моменту спорное уже было просмотрено.
+    items.sort(key=lambda x: (x['sort'], x['id']))
+
+    if dropped:
+        with open(os.path.splitext(args.out)[0] + '-dropped.json', 'w',
+                  encoding='utf-8') as f:
+            json.dump({'min_conf': args.min_conf, 'dropped': sorted(dropped)},
+                      f, ensure_ascii=False, indent=1)
+        print(f'отсеяно порогом {args.min_conf}: {len(dropped)}')
 
     size = build(items, args.out)
     print(f'{len(items)} кадров, {size/1e6:.1f} МБ -> {args.out}')
