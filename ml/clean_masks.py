@@ -28,6 +28,13 @@ RING_PX = 7          # ширина кольца вокруг пятна, в п�
 RING_SKIN_MIN = 0.22  # ниже этой доли кожи в кольце считаем пятно чужим
 MIN_AREA = 60        # совсем мелкие крошки убираем без разговоров
 
+# Кольцо не спасает от предмета, зажатого В РУКЕ: вишня окружена пальцами, и
+# кожи вокруг неё хватает. Зато ногти одной кисти сопоставимы по размеру, а
+# вишня заметно крупнее — по этому и ловим. Порог применяем только когда
+# областей достаточно, чтобы медиана что-то значила.
+AREA_OUTLIER = 2.5
+AREA_OUTLIER_MIN_PARTS = 4
+
 
 def skin_map(rgb):
     ycc = cv2.cvtColor(rgb, cv2.COLOR_RGB2YCrCb)
@@ -44,6 +51,7 @@ def clean(rgb, mask):
         (mask > 0).astype(np.uint8), connectivity=8)
     out = np.zeros_like(mask)
     dropped = []
+    kept = []
     for i in range(1, n):
         comp = lab == i
         area = int(stats[i, cv2.CC_STAT_AREA])
@@ -59,6 +67,22 @@ def clean(rgb, mask):
             dropped.append({'area': area, 'ring_skin': round(frac, 3),
                             'why': 'вокруг не кожа'})
             continue
+        kept.append((comp, area, frac))
+
+    # Второй проход — по размеру: он имеет смысл только когда уже известно,
+    # каков в этом кадре типичный ноготь.
+    if len(kept) >= AREA_OUTLIER_MIN_PARTS:
+        med = float(np.median([a for _, a, _ in kept]))
+        keep2 = []
+        for comp, area, frac in kept:
+            if area > AREA_OUTLIER * med:
+                dropped.append({'area': area, 'ring_skin': frac,
+                                'why': f'крупнее ногтей в {area/med:.1f} раза'})
+            else:
+                keep2.append((comp, area, frac))
+        kept = keep2
+
+    for comp, _, _ in kept:
         out |= comp
     return out, dropped
 
