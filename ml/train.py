@@ -83,15 +83,40 @@ class NailNet(nn.Module):
             ups.append(Up(c_in, ch[r], c_out))
             c_in = c_out
         self.ups = nn.ModuleList(ups)
-        self.head = nn.Conv2d(c_in, 1, 1)
+
+        # Самый мелкий признак MobileNetV3 идёт со страйдом 2, то есть декодер
+        # заканчивает на половине входа: при 384 на входе голова считала на 192,
+        # а результат просто растягивался вдвое. Половина разрешения терялась не
+        # на входе, а здесь — и три четверти ошибки модели лежит в четырёх
+        # пикселях от края ногтя, ровно там, где это растягивание и мажет.
+        #
+        # Вместо растягивания предсказываем четыре канала и переставляем их в
+        # пиксели (pixel shuffle): подъём разрешения становится обучаемым, а не
+        # усредняющим.
+        #
+        # Свёртка здесь разделимая — сначала пространственная по каждому каналу
+        # отдельно, потом смешивание каналов точкой. Обычная 3x3 на 48 каналов
+        # удваивала время прогона (замер: 109 мс -> 208), а разделимая даёт тот
+        # же охват 3x3 за десятую часть операций. Тот же приём, на котором
+        # построен и сам MobileNet.
+        self.head = nn.Sequential(
+            nn.Conv2d(c_in, c_in, 3, padding=1, groups=c_in, bias=False),
+            nn.BatchNorm2d(c_in), nn.ReLU(inplace=True),
+            nn.Conv2d(c_in, 4, 1),
+        )
 
     def forward(self, x):
         feats = self.enc(x)
         y = feats[self.res[0]]
         for up, r in zip(self.ups, self.res[1:]):
             y = up(y, feats[r])
-        y = self.head(y)
-        return F.interpolate(y, size=(SIZE, SIZE), mode='bilinear', align_corners=False)
+        y = F.pixel_shuffle(self.head(y), 2)
+        # Страховка: если разрешение входа когда-нибудь перестанет быть кратным
+        # страйду энкодера, размер не сойдётся ровно.
+        if y.shape[-2:] != x.shape[-2:]:
+            y = F.interpolate(y, size=x.shape[-2:], mode='bilinear',
+                              align_corners=False)
+        return y
 
 
 # ----------------------------------------------------- Dataset: ленивая загрузка

@@ -27,7 +27,25 @@ import numpy as np
 import onnxruntime as ort
 from PIL import Image
 
-from mobile_sam import SamPredictor, sam_model_registry
+# Какой SAM обводит контур. MobileSAM (vit_t) быстрый, большая vit_b точнее по
+# краю — а три четверти ошибки модели лежат именно у края ногтя.
+# Каждая сборка идёт со своим классом-предиктором; смешивать их нельзя,
+# поэтому храним пару «конструктор модели, предиктор» на каждый тип.
+SAM_REGISTRY = {}
+try:
+    from mobile_sam import (SamPredictor as _MobilePredictor,
+                            sam_model_registry as _mobile)
+    SAM_REGISTRY['vit_t'] = (_mobile['vit_t'], _MobilePredictor)
+except ImportError:
+    pass
+try:
+    from segment_anything import (SamPredictor as _BigPredictor,
+                                  sam_model_registry as _big)
+    for _k in ('vit_b', 'vit_l', 'vit_h'):
+        if _k in _big:
+            SAM_REGISTRY[_k] = (_big[_k], _BigPredictor)
+except ImportError:
+    pass
 
 from label_deck import largest_blob, solidity
 
@@ -133,6 +151,8 @@ def main():
     ap.add_argument('--src', required=True)
     ap.add_argument('--out', required=True)
     ap.add_argument('--sam', required=True)
+    ap.add_argument('--sam-type', default='vit_t', choices=sorted(SAM_REGISTRY),
+                    help='vit_t — MobileSAM (быстро), vit_b — большая (точнее край)')
     ap.add_argument('--skip', default=None,
                     help='файл со списком имён, которые уже в наборе')
     ap.add_argument('--every', type=int, default=1)
@@ -168,9 +188,11 @@ def main():
     size = sess.get_inputs()[0].shape[2]
     if not isinstance(size, int):
         size = 384
-    sam = sam_model_registry['vit_t'](checkpoint=args.sam)
+    build, Predictor = SAM_REGISTRY[args.sam_type]
+    sam = build(checkpoint=args.sam)
+    print(f'SAM: {args.sam_type}', flush=True)
     sam.eval()
-    predictor = SamPredictor(sam)
+    predictor = Predictor(sam)
 
     report = []
     for i, (key, path) in enumerate(files, 1):
