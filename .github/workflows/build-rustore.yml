@@ -59,6 +59,18 @@ jobs:
           node sync-www.js
           npx cap sync android
 
+      # Kotlin-плагин грузит модель из assets/models/nail-unet.onnx. Раньше
+      # этого файла в релизной сборке не оказывалось вовсе: шага копирования
+      # тут не было, и примерка отвечала «Ошибка сегментации». Теперь модель
+      # кладёт sync-www.js, а этот шаг следит, чтобы сборка падала громко, а не
+      # выпускала приложение с неработающей примеркой.
+      - name: Проверить, что модель попала в сборку
+        run: |
+          M=android/app/src/main/assets/models/nail-unet.onnx
+          test -f "$M" || { echo "::error::Модели нет в $M — примерка не заработает"; exit 1; }
+          echo "dee6441395e24a3fb4990f971035a82924749963a3a20aa06d81d7f990702c05  $M" | sha256sum --check
+          echo "Модель на месте: $(du -h "$M" | cut -f1)"
+
       - name: Восстановить ключ подписи из секрета
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
 
