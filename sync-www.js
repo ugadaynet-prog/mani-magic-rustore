@@ -38,7 +38,22 @@ if (fs.existsSync(ADDONS)) copyDir(ADDONS, DEST);
 // ONNX Runtime Web больше не нужен: распознавание ногтей теперь выполняет
 // нативный Capacitor-плагин NailSegmentation (Kotlin + onnxruntime-android),
 // который загружает модель из android/app/src/main/assets/models/nail-unet.onnx
-// и возвращает маску 256×256 в JavaScript. WebView не трогает ни WASM, ни .mjs.
+// и возвращает маску в JavaScript. WebView не трогает ни WASM, ни .mjs.
+
+// Кладём модель туда, где её ждёт плагин. Раньше этого шага не было: файла в
+// assets/models не оказывалось ни в репозитории, ни в сборке, `assets.open`
+// бросал исключение, и примерка отвечала «Ошибка сегментации» — то есть не
+// работала вообще. Источник правды один, app-addons/tryon/nail-unet.onnx:
+// оттуда же модель попадает и в www для веб-прототипа.
+const MODEL_SRC = path.join(ADDONS, 'tryon', 'nail-unet.onnx');
+const MODEL_DEST_DIR = path.join(__dirname, 'android', 'app', 'src', 'main', 'assets', 'models');
+if (!fs.existsSync(MODEL_SRC)) {
+  throw new Error('Нет модели ' + MODEL_SRC + ' — примерка без неё не заработает');
+}
+fs.mkdirSync(MODEL_DEST_DIR, { recursive: true });
+fs.copyFileSync(MODEL_SRC, path.join(MODEL_DEST_DIR, 'nail-unet.onnx'));
+console.log('Модель скопирована в android assets/models: ' +
+  (fs.statSync(MODEL_SRC).size / 1e6).toFixed(1) + ' МБ');
 
 // Вход в примерку есть только в Android-сборке: сайт остаётся лёгким и не
 // скачивает ONNX Runtime с моделью. Добавляем пункт первым в меню «Ещё».
