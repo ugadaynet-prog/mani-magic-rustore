@@ -28,3 +28,9 @@ ml/metrics-gold.json
 # репозиторий они не идут. Маски (png) и отчёты (json) остаются.
 ml/labels/**/*.jpg
 ml/labels/*.jpg
+# Второй круг разметки — те же правила, что и для первого: фотографии и кэш
+# эмбеддингов тяжёлые и восстанавливаются из make_label_task2.py.
+ml/labels2/photos/
+ml/labels2/cache/
+ml/labels2/**/*.jpg
+ml/labels2/*.jpg

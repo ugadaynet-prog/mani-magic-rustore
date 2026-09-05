@@ -44,12 +44,23 @@ from PIL import Image
 torch.set_num_threads(os.cpu_count() or 2)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# Папку задания можно сменить: --work labels2 для второго круга разметки.
+# Всё остальное — те же файлы и тот же порядок работы.
 WORK = os.path.join(HERE, 'labels')
-PHOTOS = os.path.join(WORK, 'photos')
-MASKS = os.path.join(WORK, 'masks')
-INSTANCES = os.path.join(WORK, 'instances')
-META = os.path.join(WORK, 'meta')
-CACHE = os.path.join(WORK, 'cache')
+PHOTOS = MASKS = INSTANCES = META = CACHE = ''
+
+
+def set_work(path):
+    global WORK, PHOTOS, MASKS, INSTANCES, META, CACHE
+    WORK = path if os.path.isabs(path) else os.path.join(HERE, path)
+    PHOTOS = os.path.join(WORK, 'photos')
+    MASKS = os.path.join(WORK, 'masks')
+    INSTANCES = os.path.join(WORK, 'instances')
+    META = os.path.join(WORK, 'meta')
+    CACHE = os.path.join(WORK, 'cache')
+
+
+set_work('labels')
 
 PORT = 8765
 # Порядок важен: mobile_sam (vit_t) быстрее в разы, но контуры у него
@@ -329,6 +340,9 @@ def precompute():
 
 
 if __name__ == '__main__':
+    if '--work' in sys.argv:
+        set_work(sys.argv[sys.argv.index('--work') + 1])
+    print(f'Задание: {os.path.relpath(WORK, HERE)}', flush=True)
     if not os.path.exists(os.path.join(WORK, 'task.json')):
         raise SystemExit('Нет labels/task.json — сначала: python make_label_task.py')
     load_sam()
