@@ -7,8 +7,11 @@ name: Дообучить на ручной разметке
 #      нынешняя сборка. Они выведены только из лицензионных данных, поэтому
 #      дообучать поверх них можно.
 #   2. Проверка идёт по 13 отложенным ручным кадрам и считает, сколько
-#      ЭТАЛОННЫХ ногтей найдено, а не IoU против автоматических масок. Эти 13
-#      кадров в обучении не участвуют никогда.
+#      ЭТАЛОННЫХ ногтей найдено, а не IoU против автоматических масок.
+#      Исключение — режим all_gold: там в обучение идут все 39 кадров, и
+#      отложенных не остаётся. Он нужен для финальной сборки, когда рецепт
+#      уже проверен; цифры проверки в этом режиме ничего не значат, а веса
+#      берутся с эпохи save_at — той, что оказалась лучшей на отложенных.
 #   3. Данных два набора: автоматический (колода + CC0) и ручной. Ручной
 #      повторяется в эпохе восемь раз, иначе 26 верных кадров утонули бы в
 #      239 приблизительных.
@@ -23,6 +26,14 @@ on:
         description: 'Учиться только на ручных кадрах (yes/no)'
         required: false
         default: 'no'
+      all_gold:
+        description: 'Взять в обучение ВСЕ ручные кадры, отложенных не будет (yes/no)'
+        required: false
+        default: 'no'
+      save_at:
+        description: 'Дополнительно сохранить веса на этой эпохе (0 — не надо)'
+        required: false
+        default: '0'
 
 jobs:
   finetune:
@@ -102,12 +113,23 @@ jobs:
             --init best-clean.pt \
             --epochs "${{ github.event.inputs.epochs }}" \
             --out best-gold.pt \
-            ${{ github.event.inputs.gold_only == 'yes' && '--no-auto' || '' }}
+            --save-at "${{ github.event.inputs.save_at }}" \
+            ${{ github.event.inputs.gold_only == 'yes' && '--no-auto' || '' }} \
+            ${{ github.event.inputs.all_gold == 'yes' && '--all-gold' || '' }}
 
       # export.py читает best.pt — подставляем дообученные веса под этим именем.
+      # При all_gold «лучшая» эпоха выбиралась бы по кадрам, которые модель
+      # видела, — такой отбор ничего не значит. Берём веса с той эпохи, что
+      # оказалась лучшей в прогоне с отложенными кадрами.
       - name: Экспорт в ONNX
         run: |
-          cp best-gold.pt best.pt
+          SRC=best-gold.pt
+          E="best-gold-e${{ github.event.inputs.save_at }}.pt"
+          if [ "${{ github.event.inputs.all_gold }}" = "yes" ] && [ -f "$E" ]; then
+            SRC="$E"
+          fi
+          echo "Экспортирую $SRC"
+          cp "$SRC" best.pt
           python export.py
           mv nail-unet.onnx nail-unet-gold.onnx
 
@@ -146,6 +168,7 @@ jobs:
           }
 
           upload_asset "best-gold.pt" "best-gold.pt"
+          for f in best-gold-e*.pt; do upload_asset "$f" "$f"; done
           upload_asset "metrics-gold.json" "metrics-gold.json"
           upload_asset "nail-unet-gold.onnx" "nail-unet-gold.onnx"
 
@@ -156,6 +179,7 @@ jobs:
           path: |
             rustore-app/ml/nail-unet-gold.onnx
             rustore-app/ml/best-gold.pt
+            rustore-app/ml/best-gold-e*.pt
             rustore-app/ml/metrics-gold.json
             rustore-app/ml/dataset_gold/split.json
           if-no-files-found: warn

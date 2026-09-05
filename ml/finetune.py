@@ -87,13 +87,22 @@ def main():
     ap.add_argument('--out', default='best-gold.pt')
     ap.add_argument('--no-auto', action='store_true',
                     help='учиться только на ручных кадрах')
+    ap.add_argument('--all-gold', action='store_true',
+                    help='взять в обучение ВСЕ ручные кадры, включая отложенные')
+    ap.add_argument('--save-at', type=int, default=0,
+                    help='дополнительно сохранить веса на этой эпохе')
     args = ap.parse_args()
 
     split = gold_split()
     size = T.SIZE
 
+    # Финальная сборка учится на всех ручных кадрах. Отложенные тогда попадают
+    # в обучение, и проверка по ним перестаёт что-либо значить — она остаётся
+    # в выводе только чтобы видеть, что обучение не разошлось. Настоящая
+    # оценка рецепта взята из прогона, где эти 13 кадров были отложены.
+    train_ids = split['train'] + split['val'] if args.all_gold else split['train']
     gold_ds = T.NailDataset(os.path.join(GOLD, 'images'), os.path.join(GOLD, 'masks'),
-                            size, files=[f'{i}.jpg' for i in split['train']],
+                            size, files=[f'{i}.jpg' for i in train_ids],
                             augment=True, dark_p=DARK_P)
     parts = [gold_ds] * GOLD_REPEAT
     if not args.no_auto:
@@ -106,10 +115,15 @@ def main():
     train_ds = ConcatDataset(parts)
     loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True,
                         num_workers=2, drop_last=True)
-    print(f'Ручных кадров: {len(split["train"])} × {GOLD_REPEAT} повторов; '
+    print(f'Ручных кадров: {len(train_ids)} × {GOLD_REPEAT} повторов; '
           f'в эпохе {len(train_ds)} примеров, {len(loader)} пачек', flush=True)
-    print(f'Отложено на проверку: {len(split["val"])} кадров '
-          f'({", ".join(split["val"])})', flush=True)
+    if args.all_gold:
+        print('ВНИМАНИЕ: учимся на всех ручных кадрах, отложенных нет. '
+              'Цифры проверки ниже — не оценка качества, они посчитаны по '
+              'кадрам, которые модель видела.', flush=True)
+    else:
+        print(f'Отложено на проверку: {len(split["val"])} кадров '
+              f'({", ".join(split["val"])})', flush=True)
 
     net = T.NailNet()
     sd = torch.load(args.init, map_location='cpu', weights_only=True)
@@ -148,6 +162,9 @@ def main():
             best = score
             torch.save(net.state_dict(), args.out)
             mark = '  ← сохранено'
+        if ep + 1 == args.save_at:
+            torch.save(net.state_dict(), f'best-gold-e{args.save_at}.pt')
+            mark += f'  ← сохранено как эпоха {args.save_at}'
         history.append(dict(epoch=ep + 1, loss=total / max(1, len(loader)), **v))
         print(f'эпоха {ep + 1:3}/{args.epochs}  потери {total / max(1, len(loader)):.4f}  '
               f'найдено {v["found"]}/{v["nails"]} = {100 * v["recall"]:5.1f}%  '
