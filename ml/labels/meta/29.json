@@ -1,0 +1,23 @@
+{
+ "skipped": false,
+ "clicks": 0,
+ "seconds": 228,
+ "id": "29",
+ "file": "29-студия-18.jpg",
+ "part": "студия",
+ "nails": 5,
+ "areas": {
+  "1": 4127,
+  "2": 3643,
+  "3": 3542,
+  "4": 2231,
+  "5": 1490
+ },
+ "saved_at": "2026-09-05T14:51:18+03:00",
+ "sam": "vit_b",
+ "crumbs_removed": [
+  3,
+  1
+ ],
+ "renumbered": true
+}

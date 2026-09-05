@@ -8,3 +8,23 @@ android/local.properties
 *.keystore
 *.jks
 password.txt
+
+# Рабочая папка ручной разметки: фотографии и кэш эмбеддингов SAM тяжёлые и
+# восстанавливаются из исходников (make_label_task.py). Сами маски — наш
+# результат, они версионируются.
+ml/labels/photos/
+ml/labels/cache/
+ml/labels/pass1/grid-*.jpg
+ml/labels/pass1/zoom-*.jpg
+ml/labels/pass1/check-*.jpg
+ml/labels/exam/*/
+# Ручная разметка в виде картинок уезжает в релиз зашифрованной (см.
+# finetune-nails-gold.yml); в репозитории держим только сами маски.
+ml/dataset_gold/
+ml/best-ci.pt
+ml/best-gold.pt
+ml/metrics-gold.json
+# Контактные листы и покраска содержат сами фотографии — в публичный
+# репозиторий они не идут. Маски (png) и отчёты (json) остаются.
+ml/labels/**/*.jpg
+ml/labels/*.jpg

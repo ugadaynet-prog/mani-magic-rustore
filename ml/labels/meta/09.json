@@ -1,0 +1,20 @@
+{
+ "skipped": false,
+ "clicks": 0,
+ "seconds": 2,
+ "id": "09",
+ "file": "09-контроль-09-зелёный.jpg",
+ "part": "контроль",
+ "nails": 5,
+ "areas": {
+  "1": 6485,
+  "2": 6392,
+  "3": 5572,
+  "4": 4598,
+  "5": 3093
+ },
+ "saved_at": "2026-09-05T13:06:14+03:00",
+ "sam": "vit_b",
+ "crumbs_removed": [],
+ "renumbered": true
+}

@@ -1,0 +1,19 @@
+{
+ "skipped": false,
+ "clicks": 0,
+ "seconds": 19,
+ "id": "01",
+ "file": "01-контроль-01-красный.jpg",
+ "part": "контроль",
+ "nails": 4,
+ "areas": {
+  "1": 14911,
+  "2": 13474,
+  "3": 13265,
+  "4": 10490
+ },
+ "saved_at": "2026-09-05T13:05:46+03:00",
+ "sam": "vit_b",
+ "crumbs_removed": [],
+ "renumbered": true
+}

@@ -120,9 +120,30 @@ class NailNet(nn.Module):
 
 
 # ----------------------------------------------------- Dataset: ленивая загрузка
+def letterbox_pair(img, mask, size):
+    """Вписать кадр в квадрат чёрными полями — ровно так делает приложение.
+
+    Раньше здесь стоял простой resize в квадрат, то есть кадр сплющивался.
+    Снимки в наборе портретные (медиана сторон 0.65), приложение же вписывает
+    их в квадрат с полями (NailSegmentationPlugin.letterboxBitmap). Выходило,
+    что модель училась на одной геометрии, а работала на другой: замер по
+    ручному эталону дал IoU 0.809 при сплющивании против 0.768 при вписывании
+    — четыре пункта модель теряла ни на чём.
+    """
+    w, h = img.size
+    side = max(w, h)
+    ci = Image.new('RGB', (side, side), (0, 0, 0))
+    cm = Image.new('L', (side, side), 0)
+    off = ((side - w) // 2, (side - h) // 2)
+    ci.paste(img, off)
+    cm.paste(mask, off)
+    return (ci.resize((size, size), Image.BILINEAR),
+            cm.resize((size, size), Image.NEAREST))
+
+
 class NailDataset(Dataset):
     def __init__(self, img_dir, mask_dir, size=384, indices=None, augment=False,
-                 files=None, dark_p=0.0, dark_seed=None):
+                 files=None, dark_p=0.0, dark_seed=None, letterbox=True):
         self.img_dir = img_dir
         self.mask_dir = mask_dir
         self.size = size
@@ -132,6 +153,7 @@ class NailDataset(Dataset):
         # это единственный способ добрать такие примеры без разметки.
         self.dark_p = dark_p
         self.dark_seed = dark_seed
+        self.letterbox = letterbox
         if files is not None:
             self.files = list(files)
         else:
@@ -151,8 +173,26 @@ class NailDataset(Dataset):
         mask_name = fname.rsplit('.', 1)[0] + '.png'
         mask = Image.open(os.path.join(self.mask_dir, mask_name)).convert('L')
 
-        img = img.resize((self.size, self.size), Image.BILINEAR)
-        mask = mask.resize((self.size, self.size), Image.NEAREST)
+        if self.augment:
+            # Повороты и зеркала — ДО приведения к квадрату. После вписывания
+            # поворот увёл бы чёрные поля туда, где их у приложения не бывает.
+            k = np.random.randint(0, 4)
+            if k:
+                rot = (Image.ROTATE_90, Image.ROTATE_180, Image.ROTATE_270)[k - 1]
+                img = img.transpose(rot)
+                mask = mask.transpose(rot)
+            if np.random.random() < 0.5:
+                img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                mask = mask.transpose(Image.FLIP_LEFT_RIGHT)
+            if np.random.random() < 0.3:
+                img = img.transpose(Image.FLIP_TOP_BOTTOM)
+                mask = mask.transpose(Image.FLIP_TOP_BOTTOM)
+
+        if self.letterbox:
+            img, mask = letterbox_pair(img, mask, self.size)
+        else:
+            img = img.resize((self.size, self.size), Image.BILINEAR)
+            mask = mask.resize((self.size, self.size), Image.NEAREST)
 
         if self.dark_p > 0:
             # Для отложенных зерно привязано к номеру кадра: цвет один и тот же
@@ -166,21 +206,7 @@ class NailDataset(Dataset):
                 img = Image.fromarray((arr * 255).astype(np.uint8))
 
         if self.augment:
-            # Расширенная аугментация
-            # 1. Случайный поворот 0/90/180/270
-            k = np.random.randint(0, 4)
-            if k:
-                img = img.rotate(90 * k)
-                mask = mask.rotate(90 * k)
-
-            # 2. Зеркалирование
-            if np.random.random() < 0.5:
-                img = img.transpose(Image.FLIP_LEFT_RIGHT)
-                mask = mask.transpose(Image.FLIP_LEFT_RIGHT)
-            if np.random.random() < 0.3:
-                img = img.transpose(Image.FLIP_TOP_BOTTOM)
-                mask = mask.transpose(Image.FLIP_TOP_BOTTOM)
-
+            # Цветовая аугментация (геометрическая сделана до вписывания)
             # 3. Яркость
             if np.random.random() < 0.5:
                 factor = np.random.uniform(0.7, 1.3)

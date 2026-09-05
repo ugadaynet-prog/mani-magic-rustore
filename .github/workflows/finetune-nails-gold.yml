@@ -1,0 +1,161 @@
+name: Дообучить на ручной разметке
+
+# Правит готовую модель по 26 кадрам, обведённым руками (ml/finetune.py).
+#
+# Чем отличается от train-nails-clean.yml:
+#   1. Не с нуля. Начинаем с best-clean.pt — весов, из которых собрана
+#      нынешняя сборка. Они выведены только из лицензионных данных, поэтому
+#      дообучать поверх них можно.
+#   2. Проверка идёт по 13 отложенным ручным кадрам и считает, сколько
+#      ЭТАЛОННЫХ ногтей найдено, а не IoU против автоматических масок. Эти 13
+#      кадров в обучении не участвуют никогда.
+#   3. Данных два набора: автоматический (колода + CC0) и ручной. Ручной
+#      повторяется в эпохе восемь раз, иначе 26 верных кадров утонули бы в
+#      239 приблизительных.
+on:
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: 'Сколько эпох (по умолчанию 60)'
+        required: false
+        default: '60'
+      gold_only:
+        description: 'Учиться только на ручных кадрах (yes/no)'
+        required: false
+        default: 'no'
+
+jobs:
+  finetune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    permissions:
+      contents: write
+    env:
+      REPO: ugadaynet-prog/mani-magic-rustore
+      RELEASE_TAG: try-on-v2
+    defaults:
+      run:
+        working-directory: rustore-app/ml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rustore-app
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Поставить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
+          pip install numpy pillow opencv-python-headless onnx onnxruntime onnxscript
+
+      # Оба набора лежат в релизе зашифрованными одним ключом: репозиторий
+      # публичный, а внутри — фотографии приложения и снимки владельца.
+      - name: Забрать наборы из Release и расшифровать
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DECK_KEY: ${{ secrets.DECK_KEY }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, urllib.request
+          tok = os.environ['GH_TOKEN']
+          url = f"https://api.github.com/repos/{os.environ['REPO']}/releases/tags/{os.environ['RELEASE_TAG']}"
+          req = urllib.request.Request(url, headers={'Authorization': f'token {tok}'})
+          rel = json.load(urllib.request.urlopen(req))
+          want = {'deck-dataset.zip.enc', 'gold-dataset.zip.enc', 'best-clean.pt'}
+          got = set()
+          for a in rel.get('assets', []):
+              if a['name'] not in want:
+                  continue
+              print(f"Беру {a['name']} ({a['size']/1e6:.1f} МБ)")
+              r = urllib.request.Request(a['url'], headers={
+                  'Authorization': f'token {tok}',
+                  'Accept': 'application/octet-stream'})
+              with urllib.request.urlopen(r) as src, open(a['name'], 'wb') as out:
+                  out.write(src.read())
+              got.add(a['name'])
+          missing = want - got
+          if missing:
+              raise SystemExit(f'В релизе нет: {", ".join(sorted(missing))}')
+          EOF
+
+          if [ -z "$DECK_KEY" ]; then
+            echo "::error::Секрет DECK_KEY пуст — расшифровать нечем."
+            exit 1
+          fi
+          for f in deck-dataset gold-dataset; do
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+              -in "$f.zip.enc" -out "$f.zip" -pass env:DECK_KEY
+            echo "Расшифровано $f.zip: $(stat -c%s "$f.zip") байт"
+          done
+          python3 -c "import zipfile; zipfile.ZipFile('gold-dataset.zip').extractall('.')"
+          echo "Ручных кадров: $(ls dataset_gold/images | wc -l)"
+
+      - name: Собрать автоматический набор
+        run: python prepare_clean.py
+
+      - name: Дообучить
+        run: |
+          python finetune.py \
+            --init best-clean.pt \
+            --epochs "${{ github.event.inputs.epochs }}" \
+            --out best-gold.pt \
+            ${{ github.event.inputs.gold_only == 'yes' && '--no-auto' || '' }}
+
+      # export.py читает best.pt — подставляем дообученные веса под этим именем.
+      - name: Экспорт в ONNX
+        run: |
+          cp best-gold.pt best.pt
+          python export.py
+          mv nail-unet.onnx nail-unet-gold.onnx
+
+      - name: Замер по всей ручной разметке
+        run: python exam.py --model nail-unet-gold.onnx || true
+        continue-on-error: true
+
+      - name: Сохранить результат в Release
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RELEASE_ID=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+          upload_asset() {
+            local file="$1" name="$2"
+            [ -f "$file" ] || { echo "  $file нет, пропускаю"; return 0; }
+            OLD_ID=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/releases/$RELEASE_ID/assets" \
+              | python3 -c "
+          import sys,json
+          for a in json.load(sys.stdin):
+              if a['name']=='$name':
+                  print(a['id']); break
+          ")
+            [ -n "$OLD_ID" ] && curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/releases/assets/$OLD_ID" >/dev/null
+            CODE=$(curl -s -o /tmp/up.json -w "%{http_code}" -X POST \
+              -H "Authorization: token $GH_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$file" \
+              "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$name")
+            if [ "$CODE" = "201" ]; then echo "  $name готово"; else echo "  $name — ошибка HTTP $CODE"; cat /tmp/up.json; fi
+          }
+
+          upload_asset "best-gold.pt" "best-gold.pt"
+          upload_asset "metrics-gold.json" "metrics-gold.json"
+          upload_asset "nail-unet-gold.onnx" "nail-unet-gold.onnx"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nail-model-gold
+          path: |
+            rustore-app/ml/nail-unet-gold.onnx
+            rustore-app/ml/best-gold.pt
+            rustore-app/ml/metrics-gold.json
+            rustore-app/ml/dataset_gold/split.json
+          if-no-files-found: warn
