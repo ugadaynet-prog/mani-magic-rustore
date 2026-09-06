@@ -1,0 +1,22 @@
+{
+ "pass": "second-by-claude",
+ "from_model": 5,
+ "from_tips": 0,
+ "marked_at": "2026-09-05T23:00:47+03:00",
+ "id": "041",
+ "file": "041.jpg",
+ "part": "обучение",
+ "nails": 5,
+ "areas": {
+  "1": 5562,
+  "2": 5163,
+  "3": 4915,
+  "4": 3614,
+  "5": 760
+ },
+ "saved_at": "2026-09-05T23:00:47+03:00",
+ "sam": "vit_b",
+ "tips_filtered": 0,
+ "crumbs_removed": [],
+ "renumbered": true
+}

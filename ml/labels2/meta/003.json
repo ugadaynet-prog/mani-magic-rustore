@@ -1,0 +1,20 @@
+{
+ "skipped": false,
+ "clicks": 0,
+ "seconds": 423,
+ "id": "003",
+ "file": "003.jpg",
+ "part": "обучение",
+ "nails": 5,
+ "areas": {
+  "1": 3051,
+  "2": 2784,
+  "3": 2748,
+  "4": 1927,
+  "5": 1083
+ },
+ "saved_at": "2026-09-05T22:23:36+03:00",
+ "sam": "vit_b",
+ "crumbs_removed": [],
+ "renumbered": true
+}

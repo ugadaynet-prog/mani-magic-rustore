@@ -11,9 +11,17 @@
 поедет. Кадр 02 (подборка рисунков, ногтей в эталоне нет) не участвует.
 
     python prepare_gold.py
+    python prepare_gold.py --round2      # добавить годные кадры второго круга
 
-Пишет dataset_gold/{images,masks} и dataset_gold/split.json.
+Пишет dataset_gold/{images,masks,instances} и dataset_gold/split.json.
+
+Второй круг (--round2) добавляется ТОЛЬКО в обучение. Отложенные тринадцать
+кадров не меняются никогда: иначе «до» и «после» станут несравнимы, а вся
+затея с эталоном была ради сравнимости. Из второго круга берутся кадры,
+размеченные владельцем руками, и те, где первый проход дал пять и больше
+ногтей с ровными площадями, — остальные учили бы модель пропускать ногти.
 """
+import argparse
 import json
 import os
 import shutil
@@ -26,6 +34,29 @@ OUT = os.path.join(HERE, 'dataset_gold')
 
 VAL_FRAC = 1 / 3
 SEED = 11
+WORK2 = os.path.join(HERE, 'labels2')
+# Область, которая вдвое с лишним крупнее соседей, — не ноготь, а клякса.
+BLOWN = 2.2
+
+
+def round2_ids():
+    """Кадры второго круга, годные для обучения, и почему они годны."""
+    import glob
+    good, skipped = [], 0
+    for p in sorted(glob.glob(os.path.join(WORK2, 'meta', '*.json'))):
+        with open(p, encoding='utf-8') as fh:
+            m = json.load(fh)
+        areas = list(m['areas'].values())
+        if not areas:
+            skipped += 1
+            continue
+        blown = len(areas) >= 3 and max(areas) > BLOWN * float(np.median(areas))
+        by_hand = m.get('pass') != 'second-by-claude'
+        if by_hand or (m['nails'] >= 5 and not blown):
+            good.append(m['id'])
+        else:
+            skipped += 1
+    return good, skipped
 
 
 def main():
@@ -42,6 +73,11 @@ def main():
         if not m.get('nails'):
             continue
         usable.append(dict(t, nails=m['nails']))
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--round2', action='store_true',
+                    help='добавить в обучение годные кадры из labels2')
+    args = ap.parse_args()
 
     rng = np.random.default_rng(SEED)
     train, val = [], []
@@ -68,8 +104,22 @@ def main():
         shutil.copyfile(os.path.join(WORK, 'instances', f'{t["id"]}.png'),
                         os.path.join(OUT, 'instances', f'{t["id"]}.png'))
 
+    extra = []
+    if args.round2:
+        ids, skipped = round2_ids()
+        for iid in ids:
+            shutil.copyfile(os.path.join(WORK2, 'photos', f'{iid}.jpg'),
+                            os.path.join(OUT, 'images', f'r2-{iid}.jpg'))
+            shutil.copyfile(os.path.join(WORK2, 'masks', f'{iid}.png'),
+                            os.path.join(OUT, 'masks', f'r2-{iid}.png'))
+            shutil.copyfile(os.path.join(WORK2, 'instances', f'{iid}.png'),
+                            os.path.join(OUT, 'instances', f'r2-{iid}.png'))
+            extra.append(f'r2-{iid}')
+        print(f'второй круг: взято {len(extra)}, отброшено {skipped}')
+
     split = {'seed': SEED,
-             'train': [t['id'] for t in train],
+             'round2': extra,
+             'train': [t['id'] for t in train] + extra,
              'val': [t['id'] for t in val],
              'by_part': {p: {'train': [t['id'] for t in train if t['part'] == p],
                              'val': [t['id'] for t in val if t['part'] == p]}

@@ -12,9 +12,11 @@
   владелец («ногти пропускает»). IoU остаётся, но вторым номером: модель может
   красиво обводить три ногтя и не видеть два, и IoU этого не покажет.
 
-  Ручные кадры повторяются в эпохе GOLD_REPEAT раз. Их 26 против 239
-  автоматических, и без этого правильная разметка утонула бы в неправильной.
-  С повтором она составляет примерно половину эпохи.
+  Ручные кадры повторяются в эпохе несколько раз, иначе правильная разметка
+  утонула бы в неправильной. Число повторов не задано жёстко, а считается так,
+  чтобы ручных и автоматических примеров в эпохе было поровну: на 26 кадрах
+  это восемь повторов, на 107 — три. Проверенный рецепт держался именно на
+  этой пропорции, и при росте набора её надо сохранять, а не число повторов.
 
   Автоматические кадры всё же остаются. На 26 кадрах сеть в миллион с лишним
   весов переобучится за десяток эпох; автоматические держат общие признаки,
@@ -40,7 +42,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GOLD = os.path.join(HERE, 'dataset_gold')
 AUTO = os.path.join(HERE, 'dataset_merged')
 
-GOLD_REPEAT = 8
+GOLD_REPEAT = 0        # 0 — посчитать так, чтобы ручных было столько же,
+                       # сколько автоматических; иначе взять как задано
 LR = 5e-5            # дообучение, а не обучение: шаг на порядок меньше
 LR_MIN = 1e-6
 BATCH = 4
@@ -91,6 +94,8 @@ def main():
                     help='взять в обучение ВСЕ ручные кадры, включая отложенные')
     ap.add_argument('--save-at', type=int, default=0,
                     help='дополнительно сохранить веса на этой эпохе')
+    ap.add_argument('--repeat', type=int, default=0,
+                    help='сколько раз повторять ручные кадры (0 — посчитать)')
     args = ap.parse_args()
 
     split = gold_split()
@@ -104,10 +109,14 @@ def main():
     gold_ds = T.NailDataset(os.path.join(GOLD, 'images'), os.path.join(GOLD, 'masks'),
                             size, files=[f'{i}.jpg' for i in train_ids],
                             augment=True, dark_p=DARK_P)
-    parts = [gold_ds] * GOLD_REPEAT
+    auto_files = []
     if not args.no_auto:
         auto_files = sorted(f for f in os.listdir(os.path.join(AUTO, 'images'))
                             if f.lower().endswith(('.jpg', '.jpeg', '.png')))
+    repeat = args.repeat or GOLD_REPEAT or max(
+        1, round(len(auto_files) / max(1, len(train_ids))))
+    parts = [gold_ds] * repeat
+    if auto_files:
         parts.append(T.NailDataset(os.path.join(AUTO, 'images'),
                                    os.path.join(AUTO, 'masks'), size,
                                    files=auto_files, augment=True, dark_p=DARK_P))
@@ -115,7 +124,7 @@ def main():
     train_ds = ConcatDataset(parts)
     loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True,
                         num_workers=2, drop_last=True)
-    print(f'Ручных кадров: {len(train_ids)} × {GOLD_REPEAT} повторов; '
+    print(f'Ручных кадров: {len(train_ids)} × {repeat} повторов; '
           f'в эпохе {len(train_ds)} примеров, {len(loader)} пачек', flush=True)
     if args.all_gold:
         print('ВНИМАНИЕ: учимся на всех ручных кадрах, отложенных нет. '

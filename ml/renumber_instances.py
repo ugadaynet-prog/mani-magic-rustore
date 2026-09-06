@@ -16,6 +16,7 @@
 
     python renumber_instances.py --dry-run
     python renumber_instances.py
+    python renumber_instances.py --work labels2
 """
 import argparse
 import json
@@ -26,7 +27,7 @@ import numpy as np
 from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WORK = os.path.join(HERE, 'labels')
+WORK = os.path.join(HERE, 'labels')   # можно сменить через --work
 
 # Крошка — след кисти, а не ноготь: одиночный клик оставляет пятно в
 # единицы пикселей. Порог берём от САМОГО КРУПНОГО ногтя кадра, а не от
@@ -42,7 +43,11 @@ CRUMB_FRAC = 0.05
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dry-run', action='store_true')
+    ap.add_argument('--work', default='labels', help='папка задания')
     args = ap.parse_args()
+
+    global WORK
+    WORK = args.work if os.path.isabs(args.work) else os.path.join(HERE, args.work)
 
     with open(os.path.join(WORK, 'task.json'), encoding='utf-8') as fh:
         items = json.load(fh)['items']
