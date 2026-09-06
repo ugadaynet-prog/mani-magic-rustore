@@ -13,8 +13,12 @@ name: Дообучить на ручной разметке
 #      уже проверен; цифры проверки в этом режиме ничего не значат, а веса
 #      берутся с эпохи save_at — той, что оказалась лучшей на отложенных.
 #   3. Данных два набора: автоматический (колода + CC0) и ручной. Ручной
-#      повторяется в эпохе восемь раз, иначе 26 верных кадров утонули бы в
-#      239 приблизительных.
+#      повторяется в эпохе столько раз, чтобы примеров стало поровну, иначе
+#      верные кадры утонули бы в приблизительных.
+#   4. size задаёт сторону входа. Замер 6 сентября: ноготь крупнее 400 px на
+#      входе находится в 95% случаев, мельче 200 px — в 67%, и мелкие дают
+#      почти все потери. При 512 тот же ноготь получает в 1.78 раза больше
+#      пикселей. ВАЖНО: то же число зашито в Kotlin-плагине (INPUT_SIZE).
 on:
   workflow_dispatch:
     inputs:
@@ -34,6 +38,10 @@ on:
         description: 'Дополнительно сохранить веса на этой эпохе (0 — не надо)'
         required: false
         default: '0'
+      size:
+        description: 'Сторона входа модели (384 или 512)'
+        required: false
+        default: '384'
 
 jobs:
   finetune:
@@ -107,7 +115,11 @@ jobs:
       - name: Собрать автоматический набор
         run: python prepare_clean.py
 
+      # SIZE управляет и обучением, и экспортом: они обязаны совпадать, иначе
+      # ONNX получит не тот вход, что видела сеть.
       - name: Дообучить
+        env:
+          SIZE: ${{ github.event.inputs.size }}
         run: |
           python finetune.py \
             --init best-clean.pt \
@@ -122,6 +134,8 @@ jobs:
       # видела, — такой отбор ничего не значит. Берём веса с той эпохи, что
       # оказалась лучшей в прогоне с отложенными кадрами.
       - name: Экспорт в ONNX
+        env:
+          SIZE: ${{ github.event.inputs.size }}
         run: |
           SRC=best-gold.pt
           E="best-gold-e${{ github.event.inputs.save_at }}.pt"
@@ -167,10 +181,14 @@ jobs:
             if [ "$CODE" = "201" ]; then echo "  $name готово"; else echo "  $name — ошибка HTTP $CODE"; cat /tmp/up.json; fi
           }
 
-          upload_asset "best-gold.pt" "best-gold.pt"
+          # Суффикс по разрешению, чтобы результаты 384 и 512 не затирали
+          # друг друга: их надо будет сравнивать между собой.
+          SUF=""
+          [ "${{ github.event.inputs.size }}" != "384" ] && SUF="-${{ github.event.inputs.size }}"
+          upload_asset "best-gold.pt" "best-gold$SUF.pt"
           for f in best-gold-e*.pt; do upload_asset "$f" "$f"; done
-          upload_asset "metrics-gold.json" "metrics-gold.json"
-          upload_asset "nail-unet-gold.onnx" "nail-unet-gold.onnx"
+          upload_asset "metrics-gold.json" "metrics-gold$SUF.json"
+          upload_asset "nail-unet-gold.onnx" "nail-unet-gold$SUF.onnx"
 
       - uses: actions/upload-artifact@v4
         if: always()
