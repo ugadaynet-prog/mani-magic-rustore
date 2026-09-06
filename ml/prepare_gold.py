@@ -17,9 +17,14 @@
 
 Второй круг (--round2) добавляется ТОЛЬКО в обучение. Отложенные тринадцать
 кадров не меняются никогда: иначе «до» и «после» станут несравнимы, а вся
-затея с эталоном была ради сравнимости. Из второго круга берутся кадры,
-размеченные владельцем руками, и те, где первый проход дал пять и больше
-ногтей с ровными площадями, — остальные учили бы модель пропускать ногти.
+затея с эталоном была ради сравнимости.
+
+Из второго круга берётся только разметка, сделанная руками. Машинную
+проверили замером 6 сентября: 81 кадр, размеченный конвейером «модель +
+MediaPipe + SAM», не дал ничего — полнота осталась 87.7%, форма упала с
+0.843 до 0.825. Причина в том, что подсказки ставила сама модель, и там, где
+она слепа, разметка утверждает, что ногтя нет. Флаг --with-machine оставлен,
+чтобы повторить тот замер, но по умолчанию такие кадры не берутся.
 """
 import argparse
 import json
@@ -39,7 +44,7 @@ WORK2 = os.path.join(HERE, 'labels2')
 BLOWN = 2.2
 
 
-def round2_ids():
+def round2_ids(with_machine=False):
     """Кадры второго круга, годные для обучения, и почему они годны."""
     import glob
     good, skipped = [], 0
@@ -50,9 +55,12 @@ def round2_ids():
         if not areas:
             skipped += 1
             continue
-        blown = len(areas) >= 3 and max(areas) > BLOWN * float(np.median(areas))
         by_hand = m.get('pass') != 'second-by-claude'
-        if by_hand or (m['nails'] >= 5 and not blown):
+        if by_hand:
+            good.append(m['id'])
+            continue
+        blown = len(areas) >= 3 and max(areas) > BLOWN * float(np.median(areas))
+        if with_machine and m['nails'] >= 5 and not blown:
             good.append(m['id'])
         else:
             skipped += 1
@@ -76,7 +84,10 @@ def main():
 
     ap = argparse.ArgumentParser()
     ap.add_argument('--round2', action='store_true',
-                    help='добавить в обучение годные кадры из labels2')
+                    help='добавить в обучение ручные кадры из labels2')
+    ap.add_argument('--with-machine', action='store_true',
+                    help='взять и машинную разметку второго круга (замером '
+                         'проверено: пользы нет)')
     args = ap.parse_args()
 
     rng = np.random.default_rng(SEED)
@@ -106,7 +117,7 @@ def main():
 
     extra = []
     if args.round2:
-        ids, skipped = round2_ids()
+        ids, skipped = round2_ids(args.with_machine)
         for iid in ids:
             shutil.copyfile(os.path.join(WORK2, 'photos', f'{iid}.jpg'),
                             os.path.join(OUT, 'images', f'r2-{iid}.jpg'))

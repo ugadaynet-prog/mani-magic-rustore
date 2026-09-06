@@ -1,20 +1,22 @@
 {
- "pass": "second-by-claude",
- "from_model": 3,
- "from_tips": 1,
- "marked_at": "2026-09-05T22:58:30+03:00",
+ "pass": "first-by-claude",
+ "prompts": [
+  [
+   0.35,
+   0.45,
+   0.455,
+   0.525
+  ]
+ ],
+ "doubtful": [],
+ "marked_at": "2026-09-06T15:34:55+03:00",
  "id": "017",
  "file": "017.jpg",
  "part": "обучение",
- "nails": 3,
+ "nails": 1,
  "areas": {
-  "1": 2820,
-  "2": 2543,
-  "3": 1926
+  "1": 2512
  },
- "saved_at": "2026-09-05T22:58:30+03:00",
- "sam": "vit_b",
- "tips_filtered": 0,
- "crumbs_removed": [],
- "renumbered": true
+ "saved_at": "2026-09-06T15:34:55+03:00",
+ "sam": "vit_b"
 }

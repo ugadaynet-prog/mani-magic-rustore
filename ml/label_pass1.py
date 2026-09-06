@@ -353,8 +353,12 @@ def main():
     ap.add_argument('--check', nargs='+')
     ap.add_argument('--zoom', nargs=5, metavar=('ID', 'X0', 'Y0', 'X1', 'Y1'))
     ap.add_argument('--sheet', nargs='?', const='all')
-    ap.add_argument('--out', default=os.path.join(L.WORK, 'pass1'))
+    ap.add_argument('--out', default=None)
+    ap.add_argument('--work', default='labels', help='папка задания')
     args = ap.parse_args()
+    L.set_work(args.work)
+    if args.out is None:
+        args.out = os.path.join(L.WORK, 'pass1')
     os.makedirs(args.out, exist_ok=True)
     items = {t['id']: t for t in L.task_items()}
 
