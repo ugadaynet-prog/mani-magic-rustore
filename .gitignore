@@ -34,3 +34,9 @@ ml/labels2/photos/
 ml/labels2/cache/
 ml/labels2/**/*.jpg
 ml/labels2/*.jpg
+# Третий круг — ногти без лака (labels3): те же правила, что и для первых
+# двух. Фотографии чужие, кэш эмбеддингов тяжёлый; маски и отчёты — наши.
+ml/labels3/photos/
+ml/labels3/cache/
+ml/labels3/**/*.jpg
+ml/labels3/*.jpg

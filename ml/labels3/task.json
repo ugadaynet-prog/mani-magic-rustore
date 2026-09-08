@@ -1,0 +1,109 @@
+{
+ "work_side": 1024,
+ "items": [
+  {
+   "id": "01",
+   "file": "01.jpg",
+   "part": "без лака",
+   "origin": "07abf3111034b5acc289c3915e1faeb4.jpg",
+   "w": 768,
+   "h": 1024
+  },
+  {
+   "id": "02",
+   "file": "02.jpg",
+   "part": "без лака",
+   "origin": "244065559e71f2f7954d67c6a2b6697c.jpg",
+   "w": 576,
+   "h": 1024
+  },
+  {
+   "id": "04",
+   "file": "04.jpg",
+   "part": "без лака",
+   "origin": "3c1e1384503a2699db35d5414bf7ae5b.jpg",
+   "w": 736,
+   "h": 981
+  },
+  {
+   "id": "05",
+   "file": "05.jpg",
+   "part": "без лака",
+   "origin": "5f02e683d95028a6c79e5700851b5ee8.jpg",
+   "w": 1024,
+   "h": 1024
+  },
+  {
+   "id": "06",
+   "file": "06.jpg",
+   "part": "без лака",
+   "origin": "6d113feb5c259c3d1cdcfd02e4c652bf.jpg",
+   "w": 474,
+   "h": 843
+  },
+  {
+   "id": "07",
+   "file": "07.jpg",
+   "part": "без лака",
+   "origin": "7b5a60226955c7b4a1799d83bcd36091.jpg",
+   "w": 576,
+   "h": 1024
+  },
+  {
+   "id": "08",
+   "file": "08.jpg",
+   "part": "без лака",
+   "origin": "9db49ae427eb0537508abbac0d7c8ef3.jpg",
+   "w": 736,
+   "h": 981
+  },
+  {
+   "id": "09",
+   "file": "09.jpg",
+   "part": "без лака",
+   "origin": "b1da0a8144541588b12056e0b706af9c.jpg",
+   "w": 736,
+   "h": 981
+  },
+  {
+   "id": "10",
+   "file": "10.jpg",
+   "part": "без лака",
+   "origin": "c3b8f45ee2a4592a00889e06bcaced54.jpg",
+   "w": 474,
+   "h": 773
+  },
+  {
+   "id": "11",
+   "file": "11.jpg",
+   "part": "без лака",
+   "origin": "d9b20867fb07cb47521928e4db782523.jpg",
+   "w": 736,
+   "h": 981
+  },
+  {
+   "id": "12",
+   "file": "12.jpg",
+   "part": "без лака",
+   "origin": "f7ae9c41f2c7ca186a2bd7c8c88934f4.jpg",
+   "w": 576,
+   "h": 1024
+  },
+  {
+   "id": "13",
+   "file": "13.jpg",
+   "part": "без лака",
+   "origin": "ffe153496a593d053e9e0a8c1a42b3bc.jpg",
+   "w": 736,
+   "h": 981
+  },
+  {
+   "id": "14",
+   "file": "14.jpg",
+   "part": "без лака",
+   "origin": "i.jpg",
+   "w": 416,
+   "h": 626
+  }
+ ]
+}

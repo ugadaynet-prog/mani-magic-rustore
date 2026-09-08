@@ -1,0 +1,138 @@
+{
+ "found_min": 0.5,
+ "raw": false,
+ "models": {
+  "nail-unet": [
+   {
+    "nails": 4,
+    "found": 4,
+    "iou": 0.807,
+    "stray": 1,
+    "stray_px": 68,
+    "id": "01",
+    "part": "без лака",
+    "file": "01.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.677,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "02",
+    "part": "без лака",
+    "file": "02.jpg"
+   },
+   {
+    "nails": 2,
+    "found": 1,
+    "iou": 0.901,
+    "stray": 4,
+    "stray_px": 39625,
+    "id": "04",
+    "part": "без лака",
+    "file": "04.jpg"
+   },
+   {
+    "nails": 4,
+    "found": 4,
+    "iou": 0.869,
+    "stray": 2,
+    "stray_px": 264,
+    "id": "05",
+    "part": "без лака",
+    "file": "05.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.698,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "06",
+    "part": "без лака",
+    "file": "06.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.771,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "07",
+    "part": "без лака",
+    "file": "07.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 4,
+    "iou": 0.905,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "08",
+    "part": "без лака",
+    "file": "08.jpg"
+   },
+   {
+    "nails": 4,
+    "found": 4,
+    "iou": 0.61,
+    "stray": 2,
+    "stray_px": 1647,
+    "id": "09",
+    "part": "без лака",
+    "file": "09.jpg"
+   },
+   {
+    "nails": 4,
+    "found": 4,
+    "iou": 0.798,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "10",
+    "part": "без лака",
+    "file": "10.jpg"
+   },
+   {
+    "nails": 4,
+    "found": 4,
+    "iou": 0.901,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "11",
+    "part": "без лака",
+    "file": "11.jpg"
+   },
+   {
+    "nails": 4,
+    "found": 3,
+    "iou": 0.829,
+    "stray": 2,
+    "stray_px": 3448,
+    "id": "12",
+    "part": "без лака",
+    "file": "12.jpg"
+   },
+   {
+    "nails": 4,
+    "found": 4,
+    "iou": 0.724,
+    "stray": 1,
+    "stray_px": 27594,
+    "id": "13",
+    "part": "без лака",
+    "file": "13.jpg"
+   },
+   {
+    "nails": 9,
+    "found": 9,
+    "iou": 0.622,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "14",
+    "part": "без лака",
+    "file": "14.jpg"
+   }
+  ]
+ }
+}

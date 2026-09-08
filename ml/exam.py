@@ -21,6 +21,7 @@
 
     python exam.py --model out/nail-unet.onnx
     python exam.py --model a.onnx b.onnx --raw     # сравнить, без постфильтра
+    python exam.py --model m.onnx --work labels3   # экзамен по голым ногтям
 """
 import argparse
 import json
@@ -35,6 +36,7 @@ import clean_masks
 import synth
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# Задание по умолчанию. Другое выбирается ключом --work.
 WORK = os.path.join(HERE, 'labels')
 
 # Доля площади эталонного ногтя, которую предсказание должно накрыть, чтобы
@@ -136,13 +138,22 @@ def main():
     ap.add_argument('--model', nargs='+', required=True)
     ap.add_argument('--raw', action='store_true',
                     help='без постфильтра (по умолчанию как в приложении — с ним)')
-    ap.add_argument('--out', default=os.path.join(WORK, 'exam'))
+    ap.add_argument('--work', default='labels',
+                    help='папка задания: labels — основной эталон, '
+                         'labels3 — ногти без лака')
+    ap.add_argument('--out', default=None)
     args = ap.parse_args()
 
-    with open(os.path.join(WORK, 'task.json'), encoding='utf-8') as fh:
+    # Заданий несколько, и каждое меряет свою жалобу: labels — общий эталон,
+    # labels3 — ногти без лака. Пути берём от выбранного, иначе экзамен
+    # молча посчитает не тот набор.
+    work = args.work if os.path.isabs(args.work) else os.path.join(HERE, args.work)
+    args.out = args.out or os.path.join(work, 'exam')
+
+    with open(os.path.join(work, 'task.json'), encoding='utf-8') as fh:
         items = json.load(fh)['items']
     ready = [t for t in items
-             if os.path.exists(os.path.join(WORK, 'instances', f'{t["id"]}.png'))]
+             if os.path.exists(os.path.join(work, 'instances', f'{t["id"]}.png'))]
     if not ready:
         raise SystemExit('Нет ни одной размеченной фотографии — сначала label_tool.py')
     if len(ready) < len(items):
@@ -162,10 +173,10 @@ def main():
 
         rows = []
         for t in ready:
-            im = Image.open(os.path.join(WORK, 'photos', t['file'])).convert('RGB')
+            im = Image.open(os.path.join(work, 'photos', t['file'])).convert('RGB')
             rgb = np.asarray(im)
             gt_idx = np.asarray(Image.open(
-                os.path.join(WORK, 'instances', f'{t["id"]}.png')))
+                os.path.join(work, 'instances', f'{t["id"]}.png')))
             pred = run_model(sess, im, size)
             if not args.raw:
                 pred = clean_masks.clean(rgb, pred.astype(np.uint8))[0].astype(bool)
