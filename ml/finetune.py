@@ -48,6 +48,9 @@ LR = 5e-5            # дообучение, а не обучение: шаг н
 LR_MIN = 1e-6
 BATCH = 4
 DARK_P = 0.35
+# Столько же кадров получают внутри маски узор вместо ровного цвета — это
+# лечит слепоту на нейл-арте, не требуя новой разметки.
+TEXTURE_P = 0.35
 
 
 def gold_split():
@@ -108,7 +111,7 @@ def main():
     train_ids = split['train'] + split['val'] if args.all_gold else split['train']
     gold_ds = T.NailDataset(os.path.join(GOLD, 'images'), os.path.join(GOLD, 'masks'),
                             size, files=[f'{i}.jpg' for i in train_ids],
-                            augment=True, dark_p=DARK_P)
+                            augment=True, dark_p=DARK_P, texture_p=TEXTURE_P)
     auto_files = []
     if not args.no_auto:
         auto_files = sorted(f for f in os.listdir(os.path.join(AUTO, 'images'))
@@ -119,7 +122,7 @@ def main():
     if auto_files:
         parts.append(T.NailDataset(os.path.join(AUTO, 'images'),
                                    os.path.join(AUTO, 'masks'), size,
-                                   files=auto_files, augment=True, dark_p=DARK_P))
+                                   files=auto_files, augment=True, dark_p=DARK_P, texture_p=TEXTURE_P))
         print(f'Автоматических кадров: {len(auto_files)}', flush=True)
     train_ds = ConcatDataset(parts)
     loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True,

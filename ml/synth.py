@@ -98,3 +98,147 @@ def recolor_batch(X, Y, rng, p=0.55):
         if take[i]:
             out[i] = recolor(X[i], Y[i], cols[i])
     return out
+
+
+# ─────────────────────────── узоры на ногте ───────────────────────────
+#
+# Зачем. recolor заливает ноготь РОВНЫМ цветом, и это учит модель ровно тому,
+# от чего она ломается на снимках нейл-арта: «ноготь — гладкое однотонное
+# пятно, отличное по цвету от кожи». На чёрном с бантом и стразами, на нюде с
+# красными завитками, на мраморе такого пятна нет, и модель не видит ничего.
+#
+# Здесь внутри той же маски рисуется узор. Маска не меняется ни на пиксель,
+# значит разметка остаётся верной, а модели приходится опираться на форму и на
+# то, что ноготь сидит на кончике пальца, — а не на однородность цвета.
+#
+# Все узоры сделаны на numpy: train.py не должен зависеть от cv2, иначе старый
+# рабочий процесс обучения (train-nails-clean.yml) перестанет ставиться.
+
+def _axis(rng):
+    """Случайное направление и перпендикуляр к нему."""
+    a = float(rng.random()) * np.pi
+    return np.array([np.cos(a), np.sin(a)], np.float32)
+
+
+def _proj(shape, u):
+    """Проекция координат каждого пикселя на направление u, нормированная 0..1."""
+    h, w = shape
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    p = xs * u[0] + ys * u[1]
+    return (p - p.min()) / max(float(p.max() - p.min()), 1e-3)
+
+
+def _lowfreq(shape, rng, cells=6):
+    """Плавный шум: маленькая случайная сетка, растянутая на кадр."""
+    h, w = shape
+    small = rng.random((cells, cells)).astype(np.float32)
+    ys = np.linspace(0, cells - 1, h)
+    xs = np.linspace(0, cells - 1, w)
+    y0 = np.clip(ys.astype(int), 0, cells - 2)
+    x0 = np.clip(xs.astype(int), 0, cells - 2)
+    fy = (ys - y0)[:, None]
+    fx = (xs - x0)[None, :]
+    a = small[y0][:, x0]
+    b = small[y0][:, x0 + 1]
+    c = small[y0 + 1][:, x0]
+    d = small[y0 + 1][:, x0 + 1]
+    return (a * (1 - fx) * (1 - fy) + b * fx * (1 - fy)
+            + c * (1 - fx) * fy + d * fx * fy).astype(np.float32)
+
+
+def pattern_field(shape, rng):
+    """Второй цвет и маска-узор: где именно он ложится поверх основного.
+
+    Узоры повторяют то, что реально встречается на снимках: френч и обратный
+    френч, полосы, разводы под мрамор, точки и стразы, блёстки, градиент.
+    Берём один-два — на настоящем маникюре их редко больше.
+    """
+    kinds = ['french', 'stripes', 'marble', 'dots', 'glitter', 'gradient']
+    n = 1 if rng.random() < 0.65 else 2
+    chosen = list(rng.choice(kinds, size=n, replace=False))
+    field = np.zeros(shape, np.float32)
+
+    for kind in chosen:
+        u = _axis(rng)
+        if kind == 'french':
+            # Полоса у одного края ногтя — свободный край или лунка.
+            t = 0.55 + float(rng.random()) * 0.30
+            p = _proj(shape, u)
+            band = (p > t) if rng.random() < 0.5 else (p < 1 - t)
+            field = np.maximum(field, band.astype(np.float32))
+        elif kind == 'stripes':
+            k = 12 + float(rng.random()) * 40
+            ph = float(rng.random()) * 6.28
+            s = np.sin(_proj(shape, u) * k + ph)
+            field = np.maximum(field, (s > float(rng.random()) * 0.6).astype(np.float32))
+        elif kind == 'marble':
+            nz = _lowfreq(shape, rng, cells=int(4 + rng.random() * 6))
+            field = np.maximum(field, np.clip((nz - 0.45) * 4, 0, 1))
+        elif kind == 'dots':
+            h, w = shape
+            ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+            r = max(1.5, min(h, w) * (0.03 + float(rng.random()) * 0.05))
+            # Центры считаем разом: цикл с полноразмерной сеткой на каждую
+            # точку был самой дорогой операцией во всей аугментации.
+            k = int(4 + rng.random() * 10)
+            cy = rng.random(k) * h
+            cx = rng.random(k) * w
+            d = ((xs[None] - cx[:, None, None]) ** 2
+                 + (ys[None] - cy[:, None, None]) ** 2)
+            field = np.maximum(field, (d.min(axis=0) < r * r).astype(np.float32))
+        elif kind == 'glitter':
+            field = np.maximum(field, (rng.random(shape) < 0.02).astype(np.float32))
+        elif kind == 'gradient':
+            field = np.maximum(field, _proj(shape, u))
+    return np.clip(field, 0, 1), chosen
+
+
+def textured(img, mask, rng, base=None, second=None):
+    """Как recolor, но внутри маски лежит узор, а не ровный цвет.
+
+    Рельеф и блик считаются по самому ногтю — так же, как в recolor, иначе
+    узор выглядел бы наклейкой, и сеть научилась бы искать наклейки.
+
+    Считаем только внутри рамки, охватывающей ногти: они занимают несколько
+    процентов кадра, и полноразмерные сетки под узор стоили 236 мс на снимок —
+    больше, чем сам шаг обучения.
+    """
+    sel = mask > 0.5
+    if sel.sum() < 40:
+        return img
+    ys, xs = np.nonzero(sel)
+    pad = 3
+    y0 = max(0, int(ys.min()) - pad); y1 = min(mask.shape[0], int(ys.max()) + pad + 1)
+    x0 = max(0, int(xs.min()) - pad); x1 = min(mask.shape[1], int(xs.max()) + pad + 1)
+    if (y1 - y0) * (x1 - x0) < mask.size * 0.85:
+        out = img.copy()
+        out[y0:y1, x0:x1] = textured(img[y0:y1, x0:x1], mask[y0:y1, x0:x1],
+                                     rng, base, second)
+        return out
+    if base is None:
+        base = targets(1, rng)[0]
+    if second is None:
+        # Второй цвет либо контрастный, либо почти белый — как в жизни: белый
+        # френч, серебряные стразы, тёмный рисунок на нюде.
+        second = (np.array([1, 1, 1], np.float32) if rng.random() < 0.45
+                  else targets(1, rng)[0])
+
+    lum = img @ LUM
+    nail = lum[sel]
+    lo, hi = np.percentile(nail, 5), np.percentile(nail, 95)
+    rng_l = max(float(hi - lo), 1e-3)
+    shade = np.clip((lum - lo) / rng_l, 0, 1)
+    q = float(np.percentile(shade[sel], 92))
+    spec = np.clip((shade - q) / max(1.0 - q, 1e-3), 0, 1)
+    relief = 0.30 + 0.70 * shade
+
+    field, _ = pattern_field(img.shape[:2], rng)
+    col = (base[None, None, :] * (1 - field[..., None])
+           + second[None, None, :] * field[..., None])
+
+    new = col * relief[..., None]
+    new = new + (1.0 - col) * (spec * 0.85)[..., None]
+    new = np.clip(new, 0, 1)
+
+    soft = _blur3(mask.astype(np.float32))[..., None]
+    return (img * (1 - soft) + new * soft).astype(np.float32)

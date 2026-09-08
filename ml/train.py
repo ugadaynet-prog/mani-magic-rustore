@@ -150,7 +150,8 @@ def letterbox_pair(img, mask, size):
 
 class NailDataset(Dataset):
     def __init__(self, img_dir, mask_dir, size=384, indices=None, augment=False,
-                 files=None, dark_p=0.0, dark_seed=None, letterbox=True):
+                 files=None, dark_p=0.0, dark_seed=None, letterbox=True,
+                 texture_p=0.0):
         self.img_dir = img_dir
         self.mask_dir = mask_dir
         self.size = size
@@ -159,6 +160,12 @@ class NailDataset(Dataset):
         # верной. В наборах тёмного лака почти нет, и модель на нём слепа —
         # это единственный способ добрать такие примеры без разметки.
         self.dark_p = dark_p
+        # Доля кадров, которым внутри маски рисуется УЗОР, а не ровный цвет.
+        # recolor заливает ноготь однотонно и тем самым учит «ноготь — гладкое
+        # одноцветное пятно»; на снимках нейл-арта (чёрный с бантом и стразами,
+        # нюд с завитками, мрамор) такого пятна нет, и модель не находит ничего.
+        # Узор заставляет опираться на форму, а маска при этом не меняется.
+        self.texture_p = texture_p
         self.dark_seed = dark_seed
         self.letterbox = letterbox
         if files is not None:
@@ -201,16 +208,18 @@ class NailDataset(Dataset):
             img = img.resize((self.size, self.size), Image.BILINEAR)
             mask = mask.resize((self.size, self.size), Image.NEAREST)
 
-        if self.dark_p > 0:
+        if self.dark_p > 0 or self.texture_p > 0:
             # Для отложенных зерно привязано к номеру кадра: цвет один и тот же
             # от прогона к прогону, иначе метрику не с чем сравнивать.
             rng = (np.random.default_rng(self.dark_seed + idx)
                    if self.dark_seed is not None else np.random.default_rng())
-            if rng.random() < self.dark_p:
+            r = rng.random()
+            if r < self.texture_p or r < self.texture_p + self.dark_p:
                 arr = np.asarray(img, dtype=np.float32) / 255.0
                 m = (np.asarray(mask) > 127).astype(np.float32)
-                arr = synth.recolor(arr, m, synth.targets(1, rng)[0])
-                img = Image.fromarray((arr * 255).astype(np.uint8))
+                arr = (synth.textured(arr, m, rng) if r < self.texture_p
+                       else synth.recolor(arr, m, synth.targets(1, rng)[0]))
+                img = Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8))
 
         if self.augment:
             # Цветовая аугментация (геометрическая сделана до вписывания)
