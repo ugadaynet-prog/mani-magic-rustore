@@ -18,20 +18,26 @@ import java.nio.FloatBuffer
  * Нативный плагин сегментации ногтей.
  *
  * JavaScript вызывает: Capacitor.Plugins.NailSegmentation.segment({ image: "<jpeg-dataUrl>" })
- * Плагин возвращает:   { mask: "<png-dataUrl grayscale 384×384>", elapsedMs: <number> }
+ * Плагин возвращает:   { mask: "<png-dataUrl grayscale INPUT_SIZE×INPUT_SIZE>", elapsedMs: <number> }
  *
  * Модель загружается один раз лениво при первом вызове segment() и хранится
  * в статическом поле — пережива перезапуски WebView без повторной загрузки.
  *
- * Входной тензор: float32[1, 3, 384, 384], значения 0..1, порядок CHW.
- * Выходной тензор: float32[1, 1, 384, 384], сырые логиты (до сигмоиды).
+ * Входной тензор: float32[1, 3, INPUT_SIZE, INPUT_SIZE], значения 0..1, порядок CHW.
+ * Выходной тензор: float32[1, 1, INPUT_SIZE, INPUT_SIZE], сырые логиты (до сигмоиды).
  */
 @CapacitorPlugin(name = "NailSegmentation")
 class NailSegmentationPlugin : Plugin() {
 
     companion object {
         private const val MODEL_ASSET = "models/nail-unet.onnx"
-        private const val INPUT_SIZE = 384
+        // Сторона входа модели. Замер по ручному эталону 6 сентября: на 384
+        // находилось 87.7% ногтей, на 512 — 91.4%, и почти вся разница на
+        // мелких ногтях (крупнее 400 px на входе модель видит в 95% случаев,
+        // мельче 200 px — в 67%). Цена — инференс примерно вдвое дороже.
+        // ВАЖНО: это же число задаётся при обучении (ml/train.py, SIZE) и
+        // должно совпадать с входом .onnx, иначе модель получит не тот тензор.
+        private const val INPUT_SIZE = 512
 
         // Пороги отсева пятен, севших мимо ногтя. Подобраны на отложенных
         // кадрах при подготовке данных, те же значения в ml/clean_masks.py.
@@ -83,11 +89,11 @@ class NailSegmentationPlugin : Plugin() {
                 val srcBitmap = BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
                     ?: throw IllegalArgumentException("Не удалось декодировать изображение")
 
-                // 2. Масштабируем в квадрат 384×384 с вписыванием (letterbox)
+                // 2. Масштабируем в квадрат INPUT_SIZE² с вписыванием (letterbox)
                 val inputBitmap = letterboxBitmap(srcBitmap, INPUT_SIZE)
                 srcBitmap.recycle()
 
-                // 3. Конвертируем пиксели → float32[1,3,384,384] CHW, 0..1
+                // 3. Конвертируем пиксели → float32[1,3,INPUT_SIZE,INPUT_SIZE] CHW, 0..1
                 val tensor = bitmapToTensor(inputBitmap)
                 inputBitmap.recycle()
 
@@ -101,12 +107,12 @@ class NailSegmentationPlugin : Plugin() {
                 val results = session.run(mapOf(inputName to inputTensor))
                 val outputName = session.outputNames.iterator().next()
 
-                // Модель возвращает 4D тензор float[1][1][384][384].
-                // "Разворачиваем" его в плоский FloatArray длиной 384*384 = 65536.
+                // Модель возвращает 4D тензор float[1][1][INPUT_SIZE][INPUT_SIZE].
+                // "Разворачиваем" его в плоский FloatArray длиной INPUT_SIZE².
                 @Suppress("UNCHECKED_CAST")
                 val logits4d = (results[outputName].get().value as Array<Array<Array<FloatArray>>>)
-                val logits2d = logits4d[0][0]                          // float[384][384]
-                val flatLogits = FloatArray(INPUT_SIZE * INPUT_SIZE)   // 65536
+                val logits2d = logits4d[0][0]                          // float[N][N]
+                val flatLogits = FloatArray(INPUT_SIZE * INPUT_SIZE)
                 for (row in 0 until INPUT_SIZE) {
                     System.arraycopy(logits2d[row], 0, flatLogits, row * INPUT_SIZE, INPUT_SIZE)
                 }
@@ -119,7 +125,7 @@ class NailSegmentationPlugin : Plugin() {
                 // определяется цвет кожи вокруг каждого пятна.
                 suppressStrayBlobs(flatLogits, tensor)
 
-                // 6. Сигмоида → grayscale bitmap 384×384
+                // 6. Сигмоида → grayscale bitmap INPUT_SIZE²
                 val maskBitmap = logitsToBitmap(flatLogits)
 
                 // 7. Кодируем PNG в base64
@@ -170,7 +176,7 @@ class NailSegmentationPlugin : Plugin() {
         return buf
     }
 
-    // Логиты 384×384 → grayscale Bitmap: яркость пикселя = вероятность * 255
+    // Логиты INPUT_SIZE² → grayscale Bitmap: яркость пикселя = вероятность * 255
     /**
      * Убирает из маски пятна, севшие мимо ногтя.
      *
