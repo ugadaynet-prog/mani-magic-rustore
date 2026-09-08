@@ -86,13 +86,22 @@ def score_frame(gt_idx, pred):
     """
     ids = [int(v) for v in np.unique(gt_idx) if v]
     found, ious = 0, []
+    # Форму запоминаем по каждому ногтю отдельно. Средняя по кадру обманывает
+    # при сравнении моделей: та, что нашла лишний трудный ноготь, получает его
+    # плохой контур в свой средний IoU, а та, что его пропустила, — нет. Тогда
+    # более полная модель выглядит хуже по форме, хотя проиграла не формой.
+    per_nail = {}
     for v in ids:
         nail = gt_idx == v
         cover = float((nail & pred).sum()) / float(nail.sum())
         if cover >= FOUND_MIN:
             found += 1
             union = (nail | pred_component_of(pred, nail)).sum()
-            ious.append(float((nail & pred).sum()) / float(union) if union else 0.0)
+            iou = float((nail & pred).sum()) / float(union) if union else 0.0
+            ious.append(iou)
+            per_nail[str(v)] = round(iou, 3)
+        else:
+            per_nail[str(v)] = None
 
     # Лишнее — связные куски предсказания, не задевшие ни одного эталона.
     n, lab, stats, _ = cv2.connectedComponentsWithStats(pred.astype(np.uint8), 8)
@@ -106,6 +115,7 @@ def score_frame(gt_idx, pred):
             stray_px += area
     return {'nails': len(ids), 'found': found,
             'iou': round(float(np.mean(ious)), 3) if ious else None,
+            'per_nail': per_nail,
             'stray': stray, 'stray_px': stray_px}
 
 
