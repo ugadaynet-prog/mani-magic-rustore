@@ -188,7 +188,7 @@ def zoom_pair(img, mask, lo=ZOOM_MIN, hi=ZOOM_MAX):
 class NailDataset(Dataset):
     def __init__(self, img_dir, mask_dir, size=384, indices=None, augment=False,
                  files=None, dark_p=0.0, dark_seed=None, letterbox=True,
-                 texture_p=0.0, zoom_p=0.0):
+                 texture_p=0.0, zoom_p=0.0, nude_p=0.0):
         self.img_dir = img_dir
         self.mask_dir = mask_dir
         self.size = size
@@ -203,6 +203,10 @@ class NailDataset(Dataset):
         # нюд с завитками, мрамор) такого пятна нет, и модель не находит ничего.
         # Узор заставляет опираться на форму, а маска при этом не меняется.
         self.texture_p = texture_p
+        # Доля кадров, у которых ЧАСТЬ ногтей делается голыми (synth.nude).
+        # Замер 8 сентября: модель идёт за лаком, а не за пластиной, и кадра
+        # «три накрашенных, один голый» в наборе нет вовсе.
+        self.nude_p = nude_p
         # Доля кадров, которым делается наезд камерой (см. zoom_pair).
         self.zoom_p = zoom_p
         self.dark_seed = dark_seed
@@ -251,17 +255,31 @@ class NailDataset(Dataset):
             img = img.resize((self.size, self.size), Image.BILINEAR)
             mask = mask.resize((self.size, self.size), Image.NEAREST)
 
-        if self.dark_p > 0 or self.texture_p > 0:
+        if self.dark_p > 0 or self.texture_p > 0 or self.nude_p > 0:
             # Для отложенных зерно привязано к номеру кадра: цвет один и тот же
             # от прогона к прогону, иначе метрику не с чем сравнивать.
             rng = (np.random.default_rng(self.dark_seed + idx)
                    if self.dark_seed is not None else np.random.default_rng())
+            # Три синтеза делят один жребий и потому не накладываются друг на
+            # друга: кадру достаётся либо узор, либо тёмный лак, либо голые
+            # ногти, либо ничего.
             r = rng.random()
-            if r < self.texture_p or r < self.texture_p + self.dark_p:
+            kind = None
+            if r < self.texture_p:
+                kind = 'texture'
+            elif r < self.texture_p + self.dark_p:
+                kind = 'dark'
+            elif r < self.texture_p + self.dark_p + self.nude_p:
+                kind = 'nude'
+            if kind:
                 arr = np.asarray(img, dtype=np.float32) / 255.0
                 m = (np.asarray(mask) > 127).astype(np.float32)
-                arr = (synth.textured(arr, m, rng) if r < self.texture_p
-                       else synth.recolor(arr, m, synth.targets(1, rng)[0]))
+                if kind == 'texture':
+                    arr = synth.textured(arr, m, rng)
+                elif kind == 'dark':
+                    arr = synth.recolor(arr, m, synth.targets(1, rng)[0])
+                else:
+                    arr = synth.nude(arr, m, rng)
                 img = Image.fromarray((np.clip(arr, 0, 1) * 255).astype(np.uint8))
 
         if self.augment:

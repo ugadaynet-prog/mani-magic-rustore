@@ -242,3 +242,114 @@ def textured(img, mask, rng, base=None, second=None):
 
     soft = _blur3(mask.astype(np.float32))[..., None]
     return (img * (1 - soft) + new * soft).astype(np.float32)
+
+
+def _blobs(mask, side=112):
+    """Разделить маску на отдельные ногти. Без cv2: его нет в чистом обучении.
+
+    Метки распространяются итеративно по уменьшенной маске. Ногтей в кадре
+    единицы, на стороне 112 они разнесены далеко, и десятка проходов хватает;
+    считать связность в полном разрешении ради выбора «какие ногти взять» ни
+    к чему.
+    """
+    h, w = mask.shape
+    k = side / max(h, w)
+    if k < 1:
+        sh, sw = max(1, round(h * k)), max(1, round(w * k))
+        iy = np.minimum((np.arange(sh) / k).astype(np.int32), h - 1)
+        ix = np.minimum((np.arange(sw) / k).astype(np.int32), w - 1)
+        small = mask[iy][:, ix]
+    else:
+        sh, sw, small = h, w, mask
+    if not small.any():
+        return []
+    BIG = np.int32(1 << 30)
+    lab = np.where(small, np.arange(small.size, dtype=np.int32).reshape(small.shape), BIG)
+    for _ in range(4 * (sh + sw)):
+        prev = lab
+        up = np.full_like(lab, BIG); up[:-1] = lab[1:]
+        dn = np.full_like(lab, BIG); dn[1:] = lab[:-1]
+        lf = np.full_like(lab, BIG); lf[:, :-1] = lab[:, 1:]
+        rt = np.full_like(lab, BIG); rt[:, 1:] = lab[:, :-1]
+        lab = np.where(small, np.minimum.reduce([lab, up, dn, lf, rt]), BIG)
+        if np.array_equal(lab, prev):
+            break
+    # Обратно в полный размер: индексная карта, ближайший сосед.
+    if k < 1:
+        by = np.minimum((np.arange(h) * k).astype(np.int32), sh - 1)
+        bx = np.minimum((np.arange(w) * k).astype(np.int32), sw - 1)
+        big = lab[by][:, bx]
+    else:
+        big = lab
+    return [(big == v) & mask for v in np.unique(lab) if v != BIG]
+
+
+def _grow(m, n=2):
+    """Расширить маску на n пикселей сдвигами — вместо cv2.dilate."""
+    out = m.copy()
+    for _ in range(n):
+        g = out.copy()
+        g[:-1] |= out[1:]; g[1:] |= out[:-1]
+        g[:, :-1] |= out[:, 1:]; g[:, 1:] |= out[:, :-1]
+        out = g
+    return out
+
+
+def nude(img, mask, rng, share=(0.34, 0.85)):
+    """Сделать ЧАСТЬ ногтей на кадре похожими на голые.
+
+    Зачем. Замер 8 сентября: на подборке рисунков модель находит 12 ногтей из
+    32, на фотографиях промахи приходятся на большой палец со светлой пластиной
+    и на нюдовые ногти с рисунком. Читается это однозначно — модель идёт за
+    лаком, а не за пластиной. В колоде и в CC0-наборе почти все ногти
+    накрашены, и кадра «три накрашенных, один голый» там нет вовсе.
+
+    Как. У выбранных ногтей цвет заменяется на цвет окружающей кожи, а
+    собственная яркость пластины сохраняется — блик остаётся бликом, тень
+    тенью, форма и край не трогаются. Маска не меняется: ноготь по-прежнему
+    ноготь, просто теперь он выглядит ненакрашенным.
+
+    Берём именно часть ногтей, а не все: кадр, где все ногти голые, у нас уже
+    есть в жизни, а вот «один голый среди накрашенных» — это ровно тот случай,
+    на котором модель спотыкается.
+    """
+    sel = mask > 0.5
+    if not sel.any():
+        return img
+    blobs = _blobs(sel)
+    if not blobs:
+        return img
+    take = max(1, int(round(len(blobs) * rng.uniform(*share))))
+    chosen = [blobs[i] for i in rng.permutation(len(blobs))[:take]]
+
+    lum = img @ LUM
+    out = img.copy()
+    for nail in chosen:
+        area = int(nail.sum())
+        if area < 24:
+            continue
+        # Кожа вокруг этого ногтя: кольцо шириной примерно в десятую его
+        # ширины, из которого выброшены все ногти кадра.
+        w = max(2, int(round(np.sqrt(area) * 0.35)))
+        ring = _grow(nail, w) & ~_grow(sel, 1)
+        if ring.sum() < 12:
+            continue
+        skin = np.median(img[ring], axis=0)
+        own = lum[nail]
+        mid = float(np.median(own))
+        if mid < 1e-3:
+            continue
+        # Пластина обычно чуть светлее и розовее кожи, а не копия её.
+        tint = np.array([rng.uniform(1.02, 1.10), 1.0, rng.uniform(0.96, 1.02)],
+                        np.float32)
+        base = np.clip(skin * tint * rng.uniform(1.00, 1.10), 0, 1)
+        shade = np.clip(lum[nail] / mid, 0.55, 1.5)[:, None]
+        out[nail] = np.clip(base[None, :] * shade, 0, 1)
+
+    # Граница смягчается, как и в остальных синтезах: идеально резкий край —
+    # подсказка, по которой сеть находила бы ноготь вместо того, чтобы учить.
+    any_chosen = np.zeros_like(sel)
+    for nail in chosen:
+        any_chosen |= nail
+    soft = _blur3(any_chosen.astype(np.float32))[..., None]
+    return (img * (1 - soft) + out * soft).astype(np.float32)

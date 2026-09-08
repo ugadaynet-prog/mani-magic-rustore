@@ -21,6 +21,8 @@ name: Дообучить на ручной разметке
 #      замер, а не потому, что так надо делать.
 #   5. zoom включает наезд камерой (train.zoom_pair): часть кадров обрезается
 #      вокруг ногтя, и модель видит макро-план, которого в колоде нет.
+#      nude делает часть ногтей на кадре голыми (synth.nude): в наборе почти
+#      все ногти накрашены, и модель научилась искать лак, а не пластину.
 #   6. size задаёт сторону входа. Замер 6 сентября: ноготь крупнее 400 px на
 #      входе находится в 95% случаев, мельче 200 px — в 67%, и мелкие дают
 #      почти все потери. При 512 тот же ноготь получает в 1.78 раза больше
@@ -54,6 +56,10 @@ on:
         default: '0'
       texture:
         description: 'Доля кадров с узором внутри маски (0 — как в сборке)'
+        required: false
+        default: '0'
+      nude:
+        description: 'Доля кадров, где часть ногтей делается голыми (0.25 — лечит «идёт за лаком»)'
         required: false
         default: '0'
       with_control:
@@ -140,6 +146,7 @@ jobs:
           SIZE: ${{ github.event.inputs.size }}
           ZOOM_P: ${{ github.event.inputs.zoom }}
           TEXTURE_P: ${{ github.event.inputs.texture }}
+          NUDE_P: ${{ github.event.inputs.nude }}
         run: |
           python finetune.py \
             --init best-clean.pt \
@@ -216,6 +223,10 @@ jobs:
           case "${{ github.event.inputs.texture }}" in
             ""|0|0.0) ;;
             *) SUF="$SUF-tex${{ github.event.inputs.texture }}" ;;
+          esac
+          case "${{ github.event.inputs.nude }}" in
+            ""|0|0.0) ;;
+            *) SUF="$SUF-nude${{ github.event.inputs.nude }}" ;;
           esac
           [ "${{ github.event.inputs.with_control }}" = "yes" ] && SUF="$SUF-ctl"
           [ "${{ github.event.inputs.all_gold }}" = "yes" ] && SUF="$SUF-all"

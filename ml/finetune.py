@@ -56,6 +56,8 @@ DARK_P = 0.35
 TEXTURE_P = float(os.environ.get('TEXTURE_P', 0.0))
 # Доля кадров с наездом камерой (train.zoom_pair). Ноль — как было.
 ZOOM_P = float(os.environ.get('ZOOM_P', 0.0))
+# Доля кадров, у которых часть ногтей делается голыми (synth.nude).
+NUDE_P = float(os.environ.get('NUDE_P', 0.0))
 # Часть эталона со снимками из открытых источников. В обучение она с
 # 8 сентября 2026 года не идёт: снимки чужие, и на вопрос «на чём обучена
 # модель» ответ должен быть коротким — CC0-набор и наша колода. На замер они
@@ -143,7 +145,7 @@ def main():
     gold_ds = T.NailDataset(os.path.join(GOLD, 'images'), os.path.join(GOLD, 'masks'),
                             size, files=[f'{i}.jpg' for i in train_ids],
                             augment=True, dark_p=DARK_P, texture_p=TEXTURE_P,
-                            zoom_p=ZOOM_P)
+                            zoom_p=ZOOM_P, nude_p=NUDE_P)
     auto_files = []
     if not args.no_auto:
         auto_files = sorted(f for f in os.listdir(os.path.join(AUTO, 'images'))
@@ -156,15 +158,15 @@ def main():
                                    os.path.join(AUTO, 'masks'), size,
                                    files=auto_files, augment=True,
                                    dark_p=DARK_P, texture_p=TEXTURE_P,
-                                   zoom_p=ZOOM_P))
+                                   zoom_p=ZOOM_P, nude_p=NUDE_P))
         print(f'Автоматических кадров: {len(auto_files)}', flush=True)
     train_ds = ConcatDataset(parts)
     loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True,
                         num_workers=2, drop_last=True)
     print(f'Ручных кадров: {len(train_ids)} × {repeat} повторов; '
           f'в эпохе {len(train_ds)} примеров, {len(loader)} пачек', flush=True)
-    print(f'Аугментация: тёмный {DARK_P}, узор {TEXTURE_P}, наезд {ZOOM_P}',
-          flush=True)
+    print(f'Аугментация: тёмный {DARK_P}, узор {TEXTURE_P}, наезд {ZOOM_P}, '
+          f'голые ногти {NUDE_P}', flush=True)
     if args.all_gold:
         print('ВНИМАНИЕ: учимся на всех ручных кадрах, отложенных нет. '
               'Цифры проверки ниже — не оценка качества, они посчитаны по '
