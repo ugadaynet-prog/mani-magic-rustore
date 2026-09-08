@@ -10,6 +10,15 @@
   // замером по ручному эталону (13 отложенных кадров): при 0.40 находится 75
   // ногтей из 81 против 74 при 0.50, лишних пятен столько же.
   const THRESHOLD = 0.40;
+  // Ширина мягкой полосы вокруг порога. Внутри неё краска нарастает плавно,
+  // а не включается щелчком: край лака на фотографии тоже не бывает резким,
+  // и жёсткая граница на увеличенной маске читается ступеньками.
+  const SOFT = 0.10;
+  // Дырка внутри ногтя площадью до этой доли всей маски закрашивается.
+  // Блёстки, стразы и белый рисунок модель нередко считает не-ногтем, и
+  // посреди покрашенной пластины остаётся непрокрашенное пятно. Настоящих
+  // сквозных отверстий в ногте не бывает, так что закрывать их безопасно.
+  const HOLE_MAX_FRAC = 0.04;
   // Сторона маски берётся из самой маски, а не задаётся константой: размер
   // входа модели менялся (384 → 512), и зашитое здесь число разъезжалось бы
   // с плагином молча — маска легла бы на фото со сдвигом и масштабом.
@@ -160,15 +169,66 @@
     });
   }
 
+  // Закрашивает дырки внутри ногтей. Фон заливается от краёв кадра; всё
+  // фоновое, куда заливка не дошла, — это отверстие внутри маски. Мелкие
+  // закрываем, крупные (промежутки между пальцами) оставляем.
+  function fillHoles(bin, side){
+    const n=side*side, seen=new Uint8Array(n), stack=new Int32Array(n);
+    let sp=0;
+    const push=(i)=>{ if(!seen[i] && !bin[i]){ seen[i]=1; stack[sp++]=i; } };
+    for(let x=0;x<side;x++){ push(x); push((side-1)*side+x); }
+    for(let y=0;y<side;y++){ push(y*side); push(y*side+side-1); }
+    while(sp>0){
+      const i=stack[--sp], x=i%side, y=(i-x)/side;
+      if(x>0) push(i-1); if(x<side-1) push(i+1);
+      if(y>0) push(i-side); if(y<side-1) push(i+side);
+    }
+    let area=0; for(let i=0;i<n;i++) if(bin[i]) area++;
+    const limit=Math.max(40, area*HOLE_MAX_FRAC);
+    const done=new Uint8Array(n);
+    for(let i0=0;i0<n;i0++){
+      if(bin[i0]||seen[i0]||done[i0]) continue;
+      // Отдельная дырка: собираем её целиком, чтобы знать размер.
+      sp=0; stack[sp++]=i0; done[i0]=1;
+      const cells=[];
+      while(sp>0){
+        const i=stack[--sp]; cells.push(i);
+        const x=i%side, y=(i-x)/side;
+        const nb=[x>0?i-1:-1, x<side-1?i+1:-1, y>0?i-side:-1, y<side-1?i+side:-1];
+        for(const j of nb) if(j>=0 && !bin[j] && !seen[j] && !done[j]){ done[j]=1; stack[sp++]=j; }
+      }
+      if(cells.length<=limit) for(const i of cells) bin[i]=1;
+    }
+    return bin;
+  }
+
   function maskCanvas(){
-    const t=THRESHOLD,net=document.createElement('canvas');net.width=net.height=maskSide;const x=net.getContext('2d'),im=x.createImageData(maskSide,maskSide);
-    for(let i=0;i<probabilities.length;i++){const v=probabilities[i]>t?255:0;im.data[4*i]=im.data[4*i+1]=im.data[4*i+2]=v;im.data[4*i+3]=255;}x.putImageData(im,0,0);
-    const m=document.createElement('canvas');m.width=geometry.w;m.height=geometry.h;m.getContext('2d').drawImage(net,geometry.ox,geometry.oy,geometry.dw,geometry.dh,0,0,m.width,m.height);return m;
+    const side=maskSide, n=side*side;
+    // Сначала бинаризуем — только чтобы найти дырки.
+    const bin=new Uint8Array(n);
+    for(let i=0;i<n;i++) bin[i]=probabilities[i]>THRESHOLD?1:0;
+    fillHoles(bin, side);
+
+    // В маску кладём саму вероятность, а не ноль-или-255. Ступеньки на краю
+    // брались именно из ранней бинаризации: диагональ ногтя на 512 точках
+    // превращалась в лесенку, и растягивание её только увеличивало. Плавное
+    // поле растягивается плавно, а порог применяется уже в размере фотографии.
+    const net=document.createElement('canvas');net.width=net.height=side;
+    const x=net.getContext('2d'),im=x.createImageData(side,side);
+    for(let i=0;i<n;i++){
+      const v=Math.round(255*Math.max(probabilities[i], bin[i]?1:0));
+      im.data[4*i]=im.data[4*i+1]=im.data[4*i+2]=v;im.data[4*i+3]=255;
+    }
+    x.putImageData(im,0,0);
+    const m=document.createElement('canvas');m.width=geometry.w;m.height=geometry.h;
+    const mx=m.getContext('2d'); mx.imageSmoothingEnabled=true; mx.imageSmoothingQuality='high';
+    mx.drawImage(net,geometry.ox,geometry.oy,geometry.dw,geometry.dh,0,0,m.width,m.height);
+    return m;
   }
   function render(){
     if(!sourceImage)return; const w=sourceImage.width,h=sourceImage.height;ui.canvas.width=w;ui.canvas.height=h;const out=ui.canvas.getContext('2d');out.drawImage(sourceImage,0,0);
     if(showingOriginal||!probabilities)return; const mask=maskCanvas(),m=mask.getContext('2d').getImageData(0,0,w,h).data,src=sourceImage.getContext('2d').getImageData(0,0,w,h),dst=out.createImageData(w,h),hex=ui.color.value,r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5),16),targetLum=.299*r+.587*g+.114*b,alpha=+ui.opacity.value/100,debug=false;
-    dst.data.set(src.data); for(let i=0;i<w*h;i++){const a=(m[4*i]/255)*alpha;if(a<.01)continue;const q=4*i;if(debug){dst.data[q]=255;dst.data[q+1]=45;dst.data[q+2]=130;continue;}const lum=.299*src.data[q]+.587*src.data[q+1]+.114*src.data[q+2],k=Math.max(.38,Math.min(1.65,lum/(targetLum||1)));dst.data[q]=src.data[q]*(1-a)+Math.min(255,r*k)*a;dst.data[q+1]=src.data[q+1]*(1-a)+Math.min(255,g*k)*a;dst.data[q+2]=src.data[q+2]*(1-a)+Math.min(255,b*k)*a;}
+    dst.data.set(src.data); for(let i=0;i<w*h;i++){const p=m[4*i]/255,a=Math.min(1,Math.max(0,(p-(THRESHOLD-SOFT))/(2*SOFT)))*alpha;if(a<.01)continue;const q=4*i;if(debug){dst.data[q]=255;dst.data[q+1]=45;dst.data[q+2]=130;continue;}const lum=.299*src.data[q]+.587*src.data[q+1]+.114*src.data[q+2],k=Math.max(.38,Math.min(1.65,lum/(targetLum||1)));dst.data[q]=src.data[q]*(1-a)+Math.min(255,r*k)*a;dst.data[q+1]=src.data[q+1]*(1-a)+Math.min(255,g*k)*a;dst.data[q+2]=src.data[q+2]*(1-a)+Math.min(255,b*k)*a;}
     out.putImageData(dst,0,0);
   }
   function resultDataUrl(){showingOriginal=false;render();return ui.canvas.toDataURL('image/jpeg',.92);}
