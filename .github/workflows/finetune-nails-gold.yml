@@ -52,6 +52,10 @@ on:
         description: 'Доля кадров с наездом камерой (0 — как было, 0.35 — макро)'
         required: false
         default: '0'
+      texture:
+        description: 'Доля кадров с узором внутри маски (0 — как в сборке)'
+        required: false
+        default: '0'
       with_control:
         description: 'Взять в обучение часть «контроль» — чужие снимки (yes/no)'
         required: false
@@ -135,6 +139,7 @@ jobs:
         env:
           SIZE: ${{ github.event.inputs.size }}
           ZOOM_P: ${{ github.event.inputs.zoom }}
+          TEXTURE_P: ${{ github.event.inputs.texture }}
         run: |
           python finetune.py \
             --init best-clean.pt \
