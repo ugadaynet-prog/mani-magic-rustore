@@ -51,6 +51,14 @@ DARK_P = 0.35
 # Столько же кадров получают внутри маски узор вместо ровного цвета — это
 # лечит слепоту на нейл-арте, не требуя новой разметки.
 TEXTURE_P = 0.35
+# Доля кадров с наездом камерой (train.zoom_pair). Ноль — как было.
+ZOOM_P = float(os.environ.get('ZOOM_P', 0.0))
+# Часть эталона со снимками из открытых источников. В обучение она с
+# 8 сентября 2026 года не идёт: снимки чужие, и на вопрос «на чём обучена
+# модель» ответ должен быть коротким — CC0-набор и наша колода. На замер они
+# остаются: измерять чужим снимком можно, выводить из него модель — нет.
+# Подробности в PROVENANCE.md.
+CONTROL_PART = 'контроль'
 
 
 def gold_split():
@@ -99,6 +107,9 @@ def main():
                     help='дополнительно сохранить веса на этой эпохе')
     ap.add_argument('--repeat', type=int, default=0,
                     help='сколько раз повторять ручные кадры (0 — посчитать)')
+    ap.add_argument('--with-control', action='store_true',
+                    help='вернуть в обучение часть «контроль» — чужие снимки '
+                         'из открытых источников (по умолчанию не берём)')
     args = ap.parse_args()
 
     split = gold_split()
@@ -109,9 +120,20 @@ def main():
     # в выводе только чтобы видеть, что обучение не разошлось. Настоящая
     # оценка рецепта взята из прогона, где эти 13 кадров были отложены.
     train_ids = split['train'] + split['val'] if args.all_gold else split['train']
+    if not args.with_control:
+        drop = set()
+        for name, grp in split.get('by_part', {}).items():
+            if name == CONTROL_PART:
+                drop |= set(grp['train']) | set(grp['val'])
+        before = len(train_ids)
+        train_ids = [i for i in train_ids if i not in drop]
+        print(f'Часть «{CONTROL_PART}» в обучение не берём: '
+              f'{before - len(train_ids)} кадров убрано (PROVENANCE.md)',
+              flush=True)
     gold_ds = T.NailDataset(os.path.join(GOLD, 'images'), os.path.join(GOLD, 'masks'),
                             size, files=[f'{i}.jpg' for i in train_ids],
-                            augment=True, dark_p=DARK_P, texture_p=TEXTURE_P)
+                            augment=True, dark_p=DARK_P, texture_p=TEXTURE_P,
+                            zoom_p=ZOOM_P)
     auto_files = []
     if not args.no_auto:
         auto_files = sorted(f for f in os.listdir(os.path.join(AUTO, 'images'))
@@ -122,13 +144,17 @@ def main():
     if auto_files:
         parts.append(T.NailDataset(os.path.join(AUTO, 'images'),
                                    os.path.join(AUTO, 'masks'), size,
-                                   files=auto_files, augment=True, dark_p=DARK_P, texture_p=TEXTURE_P))
+                                   files=auto_files, augment=True,
+                                   dark_p=DARK_P, texture_p=TEXTURE_P,
+                                   zoom_p=ZOOM_P))
         print(f'Автоматических кадров: {len(auto_files)}', flush=True)
     train_ds = ConcatDataset(parts)
     loader = DataLoader(train_ds, batch_size=BATCH, shuffle=True,
                         num_workers=2, drop_last=True)
     print(f'Ручных кадров: {len(train_ids)} × {repeat} повторов; '
           f'в эпохе {len(train_ds)} примеров, {len(loader)} пачек', flush=True)
+    print(f'Аугментация: тёмный {DARK_P}, узор {TEXTURE_P}, наезд {ZOOM_P}',
+          flush=True)
     if args.all_gold:
         print('ВНИМАНИЕ: учимся на всех ручных кадрах, отложенных нет. '
               'Цифры проверки ниже — не оценка качества, они посчитаны по '

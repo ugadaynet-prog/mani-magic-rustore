@@ -29,6 +29,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SIZE = int(os.environ.get('SIZE', 384))
 VAL_SRC = 40      # отложенных ИСХОДНЫХ фото (со всеми их копиями)
 DARK_P = 0.35     # доля пачки, которой меняем цвет лака на тёмный
+# Наезд камерой: вместо целого кадра берётся его кусок вокруг ногтя. Замер
+# 8 сентября по ногтям без лака: из 67 тысяч «лишних» пикселей 67 тысяч
+# пришлись на два макро-кадра, где ноготь занимает четверть снимка, — модель
+# принимает там кожу за пластину. Таких кадров в наборе почти нет: колода
+# снята с одного расстояния. Наезд делает их из тех же снимков и той же
+# разметки, не требуя ни новых фотографий, ни новой обводки.
+ZOOM_P = 0.35
+ZOOM_MIN, ZOOM_MAX = 0.30, 0.70   # какую долю стороны оставляем
 EPOCHS = int(os.environ.get('EPOCHS', 150))
 BATCH = 4            # Уменьшен с 8 до 4 (384x384 = 2.25x больше пикселей)
 LR = 3e-4
@@ -148,10 +156,39 @@ def letterbox_pair(img, mask, size):
             cm.resize((size, size), Image.NEAREST))
 
 
+def zoom_pair(img, mask, lo=ZOOM_MIN, hi=ZOOM_MAX):
+    """Кусок кадра вокруг случайного ногтя — «подошли ближе и пересняли».
+
+    Ноготь обязан остаться в кадре. Кусок чистой кожи без ногтя учил бы
+    обратному тому, что нужно: маска у него пустая, и сеть получала бы
+    награду за «здесь красить нечего» на любом крупном плане.
+
+    Якорь ищем по уменьшенной маске: полный np.nonzero на снимке в мегапиксель
+    стоит дороже самой аугментации, а нам нужна одна точка внутри ногтя.
+    """
+    w, h = img.size
+    a = np.asarray(mask.resize((64, 64), Image.NEAREST))
+    ys, xs = np.nonzero(a > 127)
+    if not len(xs):
+        return img, mask
+    i = np.random.randint(len(xs))
+    cx, cy = (xs[i] + 0.5) / 64 * w, (ys[i] + 0.5) / 64 * h
+    s = np.random.uniform(lo, hi)
+    cw, ch = max(32, round(w * s)), max(32, round(h * s))
+    # Смещение от центра: ноготь не обязан оказаться ровно посередине кадра,
+    # на макро-снимках он бывает и с краю.
+    x0 = round(cx - cw / 2 + np.random.uniform(-0.25, 0.25) * cw)
+    y0 = round(cy - ch / 2 + np.random.uniform(-0.25, 0.25) * ch)
+    x0 = min(max(x0, 0), max(0, w - cw))
+    y0 = min(max(y0, 0), max(0, h - ch))
+    box = (int(x0), int(y0), int(x0 + cw), int(y0 + ch))
+    return img.crop(box), mask.crop(box)
+
+
 class NailDataset(Dataset):
     def __init__(self, img_dir, mask_dir, size=384, indices=None, augment=False,
                  files=None, dark_p=0.0, dark_seed=None, letterbox=True,
-                 texture_p=0.0):
+                 texture_p=0.0, zoom_p=0.0):
         self.img_dir = img_dir
         self.mask_dir = mask_dir
         self.size = size
@@ -166,6 +203,8 @@ class NailDataset(Dataset):
         # нюд с завитками, мрамор) такого пятна нет, и модель не находит ничего.
         # Узор заставляет опираться на форму, а маска при этом не меняется.
         self.texture_p = texture_p
+        # Доля кадров, которым делается наезд камерой (см. zoom_pair).
+        self.zoom_p = zoom_p
         self.dark_seed = dark_seed
         self.letterbox = letterbox
         if files is not None:
@@ -201,6 +240,10 @@ class NailDataset(Dataset):
             if np.random.random() < 0.3:
                 img = img.transpose(Image.FLIP_TOP_BOTTOM)
                 mask = mask.transpose(Image.FLIP_TOP_BOTTOM)
+            # Наезд тоже до вписывания: после него поля стали бы частью кадра
+            # и в кусок попадала бы чёрная рамка, которой у приложения нет.
+            if self.zoom_p and np.random.random() < self.zoom_p:
+                img, mask = zoom_pair(img, mask)
 
         if self.letterbox:
             img, mask = letterbox_pair(img, mask, self.size)

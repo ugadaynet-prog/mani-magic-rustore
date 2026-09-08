@@ -15,7 +15,13 @@ name: Дообучить на ручной разметке
 #   3. Данных два набора: автоматический (колода + CC0) и ручной. Ручной
 #      повторяется в эпохе столько раз, чтобы примеров стало поровну, иначе
 #      верные кадры утонули бы в приблизительных.
-#   4. size задаёт сторону входа. Замер 6 сентября: ноготь крупнее 400 px на
+#   4. Часть «контроль» (снимки из открытых источников) с 8 сентября 2026
+#      года в обучение НЕ идёт: см. ml/PROVENANCE.md. Вернуть её можно
+#      входом with_control — он оставлен, чтобы можно было повторить старый
+#      замер, а не потому, что так надо делать.
+#   5. zoom включает наезд камерой (train.zoom_pair): часть кадров обрезается
+#      вокруг ногтя, и модель видит макро-план, которого в колоде нет.
+#   6. size задаёт сторону входа. Замер 6 сентября: ноготь крупнее 400 px на
 #      входе находится в 95% случаев, мельче 200 px — в 67%, и мелкие дают
 #      почти все потери. При 512 тот же ноготь получает в 1.78 раза больше
 #      пикселей. ВАЖНО: то же число зашито в Kotlin-плагине (INPUT_SIZE).
@@ -42,6 +48,14 @@ on:
         description: 'Сторона входа модели (384 или 512)'
         required: false
         default: '384'
+      zoom:
+        description: 'Доля кадров с наездом камерой (0 — как было, 0.35 — макро)'
+        required: false
+        default: '0'
+      with_control:
+        description: 'Взять в обучение часть «контроль» — чужие снимки (yes/no)'
+        required: false
+        default: 'no'
 
 jobs:
   finetune:
@@ -120,6 +134,7 @@ jobs:
       - name: Дообучить
         env:
           SIZE: ${{ github.event.inputs.size }}
+          ZOOM_P: ${{ github.event.inputs.zoom }}
         run: |
           python finetune.py \
             --init best-clean.pt \
@@ -127,7 +142,8 @@ jobs:
             --out best-gold.pt \
             --save-at "${{ github.event.inputs.save_at }}" \
             ${{ github.event.inputs.gold_only == 'yes' && '--no-auto' || '' }} \
-            ${{ github.event.inputs.all_gold == 'yes' && '--all-gold' || '' }}
+            ${{ github.event.inputs.all_gold == 'yes' && '--all-gold' || '' }} \
+            ${{ github.event.inputs.with_control == 'yes' && '--with-control' || '' }}
 
       # export.py читает best.pt — подставляем дообученные веса под этим именем.
       # При all_gold «лучшая» эпоха выбиралась бы по кадрам, которые модель
@@ -185,6 +201,10 @@ jobs:
           # друг друга: их надо будет сравнивать между собой.
           SUF=""
           [ "${{ github.event.inputs.size }}" != "384" ] && SUF="-${{ github.event.inputs.size }}"
+          case "${{ github.event.inputs.zoom }}" in
+            ""|0|0.0) ;;
+            *) SUF="$SUF-zoom${{ github.event.inputs.zoom }}" ;;
+          esac
           upload_asset "best-gold.pt" "best-gold$SUF.pt"
           for f in best-gold-e*.pt; do upload_asset "$f" "$f"; done
           upload_asset "metrics-gold.json" "metrics-gold$SUF.json"
