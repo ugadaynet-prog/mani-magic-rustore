@@ -2,11 +2,11 @@
  "found_min": 0.5,
  "raw": false,
  "models": {
-  "nail-unet-gold": [
+  "nail-unet": [
    {
     "nails": 4,
     "found": 4,
-    "iou": 0.9,
+    "iou": 0.907,
     "stray": 0,
     "stray_px": 0,
     "id": "01",
@@ -17,8 +17,8 @@
     "nails": 0,
     "found": 0,
     "iou": null,
-    "stray": 25,
-    "stray_px": 71666,
+    "stray": 38,
+    "stray_px": 89752,
     "id": "02",
     "part": "подборка",
     "file": "02-подборка-02-красный.jpg"
@@ -26,17 +26,17 @@
    {
     "nails": 8,
     "found": 8,
-    "iou": 0.819,
+    "iou": 0.848,
     "stray": 2,
-    "stray_px": 172,
+    "stray_px": 344,
     "id": "03",
     "part": "контроль",
     "file": "03-контроль-03-красный.jpg"
    },
    {
     "nails": 5,
-    "found": 5,
-    "iou": 0.954,
+    "found": 4,
+    "iou": 0.966,
     "stray": 0,
     "stray_px": 0,
     "id": "04",
@@ -46,7 +46,7 @@
    {
     "nails": 5,
     "found": 5,
-    "iou": 0.931,
+    "iou": 0.945,
     "stray": 0,
     "stray_px": 0,
     "id": "05",
@@ -56,7 +56,7 @@
    {
     "nails": 5,
     "found": 5,
-    "iou": 0.902,
+    "iou": 0.925,
     "stray": 0,
     "stray_px": 0,
     "id": "06",
@@ -65,8 +65,8 @@
    },
    {
     "nails": 5,
-    "found": 4,
-    "iou": 0.834,
+    "found": 5,
+    "iou": 0.825,
     "stray": 0,
     "stray_px": 0,
     "id": "07",
@@ -75,13 +75,213 @@
    },
    {
     "nails": 5,
-    "found": 4,
-    "iou": 0.409,
-    "stray": 0,
-    "stray_px": 0,
+    "found": 3,
+    "iou": 0.533,
+    "stray": 1,
+    "stray_px": 80,
     "id": "08",
     "part": "контроль",
     "file": "08-контроль-08-зелёный.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 4,
+    "iou": 0.943,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "09",
+    "part": "контроль",
+    "file": "09-контроль-09-зелёный.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 4,
+    "iou": 0.947,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "10",
+    "part": "контроль",
+    "file": "10-контроль-10-жёлтый.jpg"
+   },
+   {
+    "nails": 10,
+    "found": 9,
+    "iou": 0.91,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "11",
+    "part": "контроль",
+    "file": "11-контроль-11-жёлтый.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.854,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "12",
+    "part": "контроль",
+    "file": "12-контроль-12-жёлтый.jpg"
+   },
+   {
+    "nails": 8,
+    "found": 8,
+    "iou": 0.882,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "13",
+    "part": "контроль",
+    "file": "13-контроль-13-фиолетовый.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 4,
+    "iou": 0.925,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "14",
+    "part": "контроль",
+    "file": "14-контроль-14-фиолетовый.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 4,
+    "iou": 0.949,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "15",
+    "part": "контроль",
+    "file": "15-контроль-15-нюд.jpg"
+   },
+   {
+    "nails": 10,
+    "found": 8,
+    "iou": 0.76,
+    "stray": 1,
+    "stray_px": 647,
+    "id": "16",
+    "part": "контроль",
+    "file": "16-контроль-16-нюд.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.919,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "17",
+    "part": "контроль",
+    "file": "17-контроль-17-нюд.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.889,
+    "stray": 1,
+    "stray_px": 73,
+    "id": "18",
+    "part": "контроль",
+    "file": "18-контроль-18-белый.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.799,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "19",
+    "part": "контроль",
+    "file": "19-контроль-19-белый.jpg"
+   },
+   {
+    "nails": 10,
+    "found": 10,
+    "iou": 0.676,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "20",
+    "part": "контроль",
+    "file": "20-контроль-20-белый.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.71,
+    "stray": 1,
+    "stray_px": 473,
+    "id": "21",
+    "part": "контроль",
+    "file": "21-контроль-21-чёрный.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.936,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "22",
+    "part": "контроль",
+    "file": "22-контроль-22-чёрный.jpg"
+   },
+   {
+    "nails": 8,
+    "found": 8,
+    "iou": 0.855,
+    "stray": 2,
+    "stray_px": 872,
+    "id": "23",
+    "part": "контроль",
+    "file": "23-контроль-23-чёрный.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.866,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "24",
+    "part": "студия",
+    "file": "24-студия-03.jpg"
+   },
+   {
+    "nails": 9,
+    "found": 8,
+    "iou": 0.888,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "25",
+    "part": "студия",
+    "file": "25-студия-05.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.843,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "26",
+    "part": "студия",
+    "file": "26-студия-09.jpg"
+   },
+   {
+    "nails": 4,
+    "found": 4,
+    "iou": 0.872,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "27",
+    "part": "студия",
+    "file": "27-студия-11.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.804,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "28",
+    "part": "студия",
+    "file": "28-студия-15.jpg"
    },
    {
     "nails": 5,
@@ -89,206 +289,6 @@
     "iou": 0.939,
     "stray": 0,
     "stray_px": 0,
-    "id": "09",
-    "part": "контроль",
-    "file": "09-контроль-09-зелёный.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.908,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "10",
-    "part": "контроль",
-    "file": "10-контроль-10-жёлтый.jpg"
-   },
-   {
-    "nails": 10,
-    "found": 9,
-    "iou": 0.899,
-    "stray": 1,
-    "stray_px": 94,
-    "id": "11",
-    "part": "контроль",
-    "file": "11-контроль-11-жёлтый.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.85,
-    "stray": 1,
-    "stray_px": 787,
-    "id": "12",
-    "part": "контроль",
-    "file": "12-контроль-12-жёлтый.jpg"
-   },
-   {
-    "nails": 8,
-    "found": 8,
-    "iou": 0.903,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "13",
-    "part": "контроль",
-    "file": "13-контроль-13-фиолетовый.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.917,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "14",
-    "part": "контроль",
-    "file": "14-контроль-14-фиолетовый.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.946,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "15",
-    "part": "контроль",
-    "file": "15-контроль-15-нюд.jpg"
-   },
-   {
-    "nails": 10,
-    "found": 7,
-    "iou": 0.909,
-    "stray": 3,
-    "stray_px": 1441,
-    "id": "16",
-    "part": "контроль",
-    "file": "16-контроль-16-нюд.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.892,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "17",
-    "part": "контроль",
-    "file": "17-контроль-17-нюд.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.893,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "18",
-    "part": "контроль",
-    "file": "18-контроль-18-белый.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.784,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "19",
-    "part": "контроль",
-    "file": "19-контроль-19-белый.jpg"
-   },
-   {
-    "nails": 10,
-    "found": 9,
-    "iou": 0.659,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "20",
-    "part": "контроль",
-    "file": "20-контроль-20-белый.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.717,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "21",
-    "part": "контроль",
-    "file": "21-контроль-21-чёрный.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.917,
-    "stray": 1,
-    "stray_px": 68,
-    "id": "22",
-    "part": "контроль",
-    "file": "22-контроль-22-чёрный.jpg"
-   },
-   {
-    "nails": 8,
-    "found": 8,
-    "iou": 0.829,
-    "stray": 1,
-    "stray_px": 188,
-    "id": "23",
-    "part": "контроль",
-    "file": "23-контроль-23-чёрный.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.891,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "24",
-    "part": "студия",
-    "file": "24-студия-03.jpg"
-   },
-   {
-    "nails": 9,
-    "found": 7,
-    "iou": 0.758,
-    "stray": 1,
-    "stray_px": 64,
-    "id": "25",
-    "part": "студия",
-    "file": "25-студия-05.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.891,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "26",
-    "part": "студия",
-    "file": "26-студия-09.jpg"
-   },
-   {
-    "nails": 4,
-    "found": 4,
-    "iou": 0.807,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "27",
-    "part": "студия",
-    "file": "27-студия-11.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.878,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "28",
-    "part": "студия",
-    "file": "28-студия-15.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.847,
-    "stray": 0,
-    "stray_px": 0,
     "id": "29",
     "part": "студия",
     "file": "29-студия-18.jpg"
@@ -296,7 +296,7 @@
    {
     "nails": 5,
     "found": 5,
-    "iou": 0.763,
+    "iou": 0.788,
     "stray": 0,
     "stray_px": 0,
     "id": "30",
@@ -306,7 +306,7 @@
    {
     "nails": 5,
     "found": 5,
-    "iou": 0.844,
+    "iou": 0.856,
     "stray": 0,
     "stray_px": 0,
     "id": "31",
@@ -316,7 +316,7 @@
    {
     "nails": 4,
     "found": 4,
-    "iou": 0.847,
+    "iou": 0.868,
     "stray": 0,
     "stray_px": 0,
     "id": "32",
@@ -326,7 +326,7 @@
    {
     "nails": 5,
     "found": 5,
-    "iou": 0.857,
+    "iou": 0.885,
     "stray": 0,
     "stray_px": 0,
     "id": "33",
@@ -336,7 +336,7 @@
    {
     "nails": 5,
     "found": 5,
-    "iou": 0.866,
+    "iou": 0.876,
     "stray": 0,
     "stray_px": 0,
     "id": "34",
@@ -346,461 +346,59 @@
    {
     "nails": 5,
     "found": 4,
-    "iou": 0.883,
-    "stray": 1,
-    "stray_px": 3418,
-    "id": "35",
-    "part": "студия",
-    "file": "35-студия-36.jpg"
-   },
-   {
-    "nails": 10,
-    "found": 7,
-    "iou": 0.889,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "36",
-    "part": "студия",
-    "file": "36-студия-40.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.794,
-    "stray": 1,
-    "stray_px": 72,
-    "id": "37",
-    "part": "студия",
-    "file": "37-студия-41.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.842,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "38",
-    "part": "студия",
-    "file": "38-студия-43.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.9,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "39",
-    "part": "студия",
-    "file": "39-студия-45.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.802,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "40",
-    "part": "студия",
-    "file": "40-студия-48.jpg"
-   }
-  ],
-  "nail-unet": [
-   {
-    "nails": 4,
-    "found": 4,
-    "iou": 0.888,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "01",
-    "part": "контроль",
-    "file": "01-контроль-01-красный.jpg"
-   },
-   {
-    "nails": 0,
-    "found": 0,
-    "iou": null,
-    "stray": 18,
-    "stray_px": 61633,
-    "id": "02",
-    "part": "подборка",
-    "file": "02-подборка-02-красный.jpg"
-   },
-   {
-    "nails": 8,
-    "found": 7,
-    "iou": 0.745,
-    "stray": 1,
-    "stray_px": 60,
-    "id": "03",
-    "part": "контроль",
-    "file": "03-контроль-03-красный.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.888,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "04",
-    "part": "контроль",
-    "file": "04-контроль-04-синий.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.922,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "05",
-    "part": "контроль",
-    "file": "05-контроль-05-синий.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.891,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "06",
-    "part": "контроль",
-    "file": "06-контроль-06-синий.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 3,
-    "iou": 0.444,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "07",
-    "part": "контроль",
-    "file": "07-контроль-07-зелёный.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 3,
-    "iou": 0.194,
-    "stray": 1,
-    "stray_px": 69,
-    "id": "08",
-    "part": "контроль",
-    "file": "08-контроль-08-зелёный.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.938,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "09",
-    "part": "контроль",
-    "file": "09-контроль-09-зелёный.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.844,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "10",
-    "part": "контроль",
-    "file": "10-контроль-10-жёлтый.jpg"
-   },
-   {
-    "nails": 10,
-    "found": 9,
-    "iou": 0.89,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "11",
-    "part": "контроль",
-    "file": "11-контроль-11-жёлтый.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 2,
-    "iou": 0.761,
-    "stray": 1,
-    "stray_px": 68,
-    "id": "12",
-    "part": "контроль",
-    "file": "12-контроль-12-жёлтый.jpg"
-   },
-   {
-    "nails": 8,
-    "found": 7,
-    "iou": 0.72,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "13",
-    "part": "контроль",
-    "file": "13-контроль-13-фиолетовый.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.897,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "14",
-    "part": "контроль",
-    "file": "14-контроль-14-фиолетовый.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.776,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "15",
-    "part": "контроль",
-    "file": "15-контроль-15-нюд.jpg"
-   },
-   {
-    "nails": 10,
-    "found": 6,
-    "iou": 0.877,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "16",
-    "part": "контроль",
-    "file": "16-контроль-16-нюд.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.87,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "17",
-    "part": "контроль",
-    "file": "17-контроль-17-нюд.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.866,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "18",
-    "part": "контроль",
-    "file": "18-контроль-18-белый.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.785,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "19",
-    "part": "контроль",
-    "file": "19-контроль-19-белый.jpg"
-   },
-   {
-    "nails": 10,
-    "found": 6,
-    "iou": 0.617,
-    "stray": 1,
-    "stray_px": 187,
-    "id": "20",
-    "part": "контроль",
-    "file": "20-контроль-20-белый.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 2,
-    "iou": 0.55,
-    "stray": 1,
-    "stray_px": 1196,
-    "id": "21",
-    "part": "контроль",
-    "file": "21-контроль-21-чёрный.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.912,
-    "stray": 1,
-    "stray_px": 105,
-    "id": "22",
-    "part": "контроль",
-    "file": "22-контроль-22-чёрный.jpg"
-   },
-   {
-    "nails": 8,
-    "found": 6,
-    "iou": 0.65,
-    "stray": 3,
-    "stray_px": 2743,
-    "id": "23",
-    "part": "контроль",
-    "file": "23-контроль-23-чёрный.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.721,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "24",
-    "part": "студия",
-    "file": "24-студия-03.jpg"
-   },
-   {
-    "nails": 9,
-    "found": 6,
-    "iou": 0.666,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "25",
-    "part": "студия",
-    "file": "25-студия-05.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.444,
-    "stray": 1,
-    "stray_px": 79,
-    "id": "26",
-    "part": "студия",
-    "file": "26-студия-09.jpg"
-   },
-   {
-    "nails": 4,
-    "found": 4,
-    "iou": 0.751,
-    "stray": 1,
-    "stray_px": 1120,
-    "id": "27",
-    "part": "студия",
-    "file": "27-студия-11.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.862,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "28",
-    "part": "студия",
-    "file": "28-студия-15.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.883,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "29",
-    "part": "студия",
-    "file": "29-студия-18.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.887,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "30",
-    "part": "студия",
-    "file": "30-студия-20.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 3,
-    "iou": 0.801,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "31",
-    "part": "студия",
-    "file": "31-студия-22.jpg"
-   },
-   {
-    "nails": 4,
-    "found": 4,
-    "iou": 0.733,
-    "stray": 2,
-    "stray_px": 2274,
-    "id": "32",
-    "part": "студия",
-    "file": "32-студия-24.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.689,
-    "stray": 1,
-    "stray_px": 176,
-    "id": "33",
-    "part": "студия",
-    "file": "33-студия-25.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
-    "iou": 0.852,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "34",
-    "part": "студия",
-    "file": "34-студия-34.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.757,
-    "stray": 2,
-    "stray_px": 4964,
-    "id": "35",
-    "part": "студия",
-    "file": "35-студия-36.jpg"
-   },
-   {
-    "nails": 10,
-    "found": 6,
-    "iou": 0.867,
-    "stray": 0,
-    "stray_px": 0,
-    "id": "36",
-    "part": "студия",
-    "file": "36-студия-40.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.623,
-    "stray": 1,
-    "stray_px": 1751,
-    "id": "37",
-    "part": "студия",
-    "file": "37-студия-41.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 4,
-    "iou": 0.834,
-    "stray": 1,
-    "stray_px": 144,
-    "id": "38",
-    "part": "студия",
-    "file": "38-студия-43.jpg"
-   },
-   {
-    "nails": 5,
-    "found": 5,
     "iou": 0.902,
     "stray": 0,
     "stray_px": 0,
+    "id": "35",
+    "part": "студия",
+    "file": "35-студия-36.jpg"
+   },
+   {
+    "nails": 10,
+    "found": 8,
+    "iou": 0.897,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "36",
+    "part": "студия",
+    "file": "36-студия-40.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.764,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "37",
+    "part": "студия",
+    "file": "37-студия-41.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 4,
+    "iou": 0.864,
+    "stray": 0,
+    "stray_px": 0,
+    "id": "38",
+    "part": "студия",
+    "file": "38-студия-43.jpg"
+   },
+   {
+    "nails": 5,
+    "found": 5,
+    "iou": 0.92,
+    "stray": 0,
+    "stray_px": 0,
     "id": "39",
     "part": "студия",
     "file": "39-студия-45.jpg"
    },
    {
     "nails": 5,
-    "found": 4,
-    "iou": 0.81,
-    "stray": 2,
-    "stray_px": 335,
+    "found": 5,
+    "iou": 0.838,
+    "stray": 0,
+    "stray_px": 0,
     "id": "40",
     "part": "студия",
     "file": "40-студия-48.jpg"

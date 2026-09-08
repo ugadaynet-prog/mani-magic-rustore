@@ -43,8 +43,6 @@ class NailSegmentationPlugin : Plugin() {
         // кадрах при подготовке данных, те же значения в ml/clean_masks.py.
         private const val RING_PX = 7                 // ширина кольца вокруг пятна
         private const val RING_SKIN_MIN = 0.22f       // ниже — вокруг не кожа
-        private const val AREA_OUTLIER = 2.5f         // во столько раз крупнее соседей
-        private const val AREA_OUTLIER_MIN_PARTS = 4  // меньше — медиана бессмысленна
 
         @Volatile private var ortEnv: OrtEnvironment? = null
         @Volatile private var ortSession: OrtSession? = null
@@ -273,13 +271,12 @@ class NailSegmentationPlugin : Plugin() {
             if (total >= 20 && skin.toFloat() / total < RING_SKIN_MIN) reject[id] = true
         }
 
-        // Правило 2: область заметно крупнее типичного ногтя этого кадра.
-        val kept = areas.indices.filter { !reject[it] }
-        if (kept.size >= AREA_OUTLIER_MIN_PARTS) {
-            val sorted = kept.map { areas[it] }.sorted()
-            val median = sorted[sorted.size / 2].toFloat()
-            for (id in kept) if (areas[id] > AREA_OUTLIER * median) reject[id] = true
-        }
+        // Правило по размеру («область крупнее соседей в 2.5 раза») убрано
+        // 8 сентября. Замер по ручному эталону, 39 кадров: без него находится
+        // 209 ногтей из 225 против 204, а лишних пятен столько же — восемь.
+        // Оно писалось, когда модель красила мох, мех и жемчуг целыми пятнами;
+        // теперь она точна, и под правило попадал не мусор, а крупный ноготь
+        // большого пальца или ноготь на макро-кадре.
 
         for (p in 0 until n) {
             val id = label[p]

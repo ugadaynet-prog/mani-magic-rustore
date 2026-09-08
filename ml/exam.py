@@ -45,6 +45,10 @@ FOUND_MIN = 0.5
 # Пятна мельче этого в предсказании — крошка на границе, а не «покрасил не то».
 MIN_BLOB = 60
 PAINT = np.array([0.05, 0.78, 0.45], dtype=np.float32)
+# Порог отсечки — тот же, что в приложении (app-addons/tryon/tryon.js,
+# THRESHOLD). Экзамен должен предсказывать то, что человек увидит на телефоне;
+# если пороги разойдутся, он снова начнёт мерить не то.
+THRESHOLD = 0.40
 
 
 def letterbox(im, size):
@@ -69,7 +73,7 @@ def run_model(sess, im, size):
     x = np.transpose(x, (2, 0, 1))[None]
     logits = sess.run(None, {sess.get_inputs()[0].name: x})[0]
     prob = 1.0 / (1.0 + np.exp(-logits[0, 0]))
-    return unletterbox(prob > 0.5, im.width, im.height)
+    return unletterbox(prob > THRESHOLD, im.width, im.height)
 
 
 def score_frame(gt_idx, pred):
