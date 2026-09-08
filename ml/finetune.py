@@ -130,6 +130,13 @@ def main():
                 drop |= set(grp['train']) | set(grp['val'])
         before = len(train_ids)
         train_ids = [i for i in train_ids if i not in drop]
+        if not drop:
+            # Молчаливый провал тут страшнее остановки: набор соберётся с
+            # чужими снимками, прогон отработает часы и окажется не тем.
+            raise SystemExit(
+                f'В split.json нет части «{CONTROL_PART}» — не понимаю, что '
+                f'исключать. Пересоберите набор: python prepare_gold.py '
+                f'--round2')
         print(f'Часть «{CONTROL_PART}» в обучение не берём: '
               f'{before - len(train_ids)} кадров убрано (PROVENANCE.md)',
               flush=True)
