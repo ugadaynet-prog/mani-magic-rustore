@@ -202,14 +202,24 @@ jobs:
             if [ "$CODE" = "201" ]; then echo "  $name готово"; else echo "  $name — ошибка HTTP $CODE"; cat /tmp/up.json; fi
           }
 
-          # Суффикс по разрешению, чтобы результаты 384 и 512 не затирали
-          # друг друга: их надо будет сравнивать между собой.
+          # Суффикс описывает рецепт, а не только разрешение. 8 сентября
+          # прогон с узором записался поверх прогона без узора под тем же
+          # именем best-gold-512.pt, и веса действующей сборки нашлись только
+          # в артефакте рабочего процесса. Имя обязано отличаться везде, где
+          # отличается рецепт.
           SUF=""
           [ "${{ github.event.inputs.size }}" != "384" ] && SUF="-${{ github.event.inputs.size }}"
           case "${{ github.event.inputs.zoom }}" in
             ""|0|0.0) ;;
             *) SUF="$SUF-zoom${{ github.event.inputs.zoom }}" ;;
           esac
+          case "${{ github.event.inputs.texture }}" in
+            ""|0|0.0) ;;
+            *) SUF="$SUF-tex${{ github.event.inputs.texture }}" ;;
+          esac
+          [ "${{ github.event.inputs.with_control }}" = "yes" ] && SUF="$SUF-ctl"
+          [ "${{ github.event.inputs.all_gold }}" = "yes" ] && SUF="$SUF-all"
+          echo "Суффикс результатов: '$SUF'"
           upload_asset "best-gold.pt" "best-gold$SUF.pt"
           for f in best-gold-e*.pt; do upload_asset "$f" "$f"; done
           upload_asset "metrics-gold.json" "metrics-gold$SUF.json"
