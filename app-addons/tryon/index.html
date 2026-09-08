@@ -41,15 +41,6 @@
       <div id="palette" class="palette" aria-label="Готовые цвета"></div>
       <label class="color-custom">Свой цвет <input id="colorInput" type="color" value="#d81b60"></label>
       <label class="range-row"><span>Интенсивность</span><output id="opacityValue">72%</output><input id="opacity" type="range" min="0" max="100" value="72"></label>
-      <details class="advanced">
-        <summary>Настроить распознавание</summary>
-        <!-- Порог по умолчанию 0.40, а не 0.50: замер по ручному эталону
-             (13 отложенных кадров, 8 сентября) дал 75 найденных ногтей из 81
-             против 74, при том же числе лишних пятен и том же IoU. -->
-        <label class="range-row"><span>Порог маски</span><output id="thresholdValue">0.40</output><input id="threshold" type="range" min="0.15" max="0.85" step="0.01" value="0.40"></label>
-        <label class="toggle-row"><span>Показать маску</span><input id="showMask" type="checkbox"></label>
-        <button id="recognizeBtn" class="secondary full" type="button">Распознать заново</button>
-      </details>
       <div class="action-row">
         <button id="saveBtn" class="primary" type="button">Сохранить результат</button>
         <button id="shareBtn" class="secondary" type="button">Поделиться</button>

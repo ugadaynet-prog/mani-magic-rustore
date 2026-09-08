@@ -1,9 +1,15 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const ui = { start:$('startCard'), editor:$('editor'), camera:$('cameraInput'), gallery:$('galleryInput'), model:$('modelStatus'), canvas:$('resultCanvas'), busy:$('busy'), color:$('colorInput'), code:$('colorCode'), opacity:$('opacity'), opacityValue:$('opacityValue'), threshold:$('threshold'), thresholdValue:$('thresholdValue'), showMask:$('showMask'), status:$('editorStatus'), toast:$('toast'), compare:$('compareBtn'), palette:$('palette'), newPhoto:$('newPhotoBtn'), share:$('shareBtn'), save:$('saveBtn'), recognize:$('recognizeBtn') };
+  const ui = { start:$('startCard'), editor:$('editor'), camera:$('cameraInput'), gallery:$('galleryInput'), model:$('modelStatus'), canvas:$('resultCanvas'), busy:$('busy'), color:$('colorInput'), code:$('colorCode'), opacity:$('opacity'), opacityValue:$('opacityValue'), status:$('editorStatus'), toast:$('toast'), compare:$('compareBtn'), palette:$('palette'), newPhoto:$('newPhotoBtn'), share:$('shareBtn'), save:$('saveBtn') };
   const colors = ['#F5D0C5','#D98A91','#F04479','#D81B60','#A81748','#8B2F67','#7446B8','#335CC7','#1597A5','#3BAA70','#D6A522','#17171B'];
   let sourceBitmap, sourceImage, probabilities, geometry, showingOriginal = false;
+  // Порог отсечки маски. Был ползунком в разделе «Настроить распознавание»,
+  // но клиенту нечего с ним делать: «порог маски» ничего ему не говорит, а
+  // сценарий должен быть «сфотографировал — примерил». Значение выбрано
+  // замером по ручному эталону (13 отложенных кадров): при 0.40 находится 75
+  // ногтей из 81 против 74 при 0.50, лишних пятен столько же.
+  const THRESHOLD = 0.40;
   // Сторона маски берётся из самой маски, а не задаётся константой: размер
   // входа модели менялся (384 → 512), и зашитое здесь число разъезжалось бы
   // с плагином молча — маска легла бы на фото со сдвигом и масштабом.
@@ -155,13 +161,13 @@
   }
 
   function maskCanvas(){
-    const t=+ui.threshold.value,net=document.createElement('canvas');net.width=net.height=maskSide;const x=net.getContext('2d'),im=x.createImageData(maskSide,maskSide);
+    const t=THRESHOLD,net=document.createElement('canvas');net.width=net.height=maskSide;const x=net.getContext('2d'),im=x.createImageData(maskSide,maskSide);
     for(let i=0;i<probabilities.length;i++){const v=probabilities[i]>t?255:0;im.data[4*i]=im.data[4*i+1]=im.data[4*i+2]=v;im.data[4*i+3]=255;}x.putImageData(im,0,0);
     const m=document.createElement('canvas');m.width=geometry.w;m.height=geometry.h;m.getContext('2d').drawImage(net,geometry.ox,geometry.oy,geometry.dw,geometry.dh,0,0,m.width,m.height);return m;
   }
   function render(){
     if(!sourceImage)return; const w=sourceImage.width,h=sourceImage.height;ui.canvas.width=w;ui.canvas.height=h;const out=ui.canvas.getContext('2d');out.drawImage(sourceImage,0,0);
-    if(showingOriginal||!probabilities)return; const mask=maskCanvas(),m=mask.getContext('2d').getImageData(0,0,w,h).data,src=sourceImage.getContext('2d').getImageData(0,0,w,h),dst=out.createImageData(w,h),hex=ui.color.value,r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5),16),targetLum=.299*r+.587*g+.114*b,alpha=+ui.opacity.value/100,debug=ui.showMask.checked;
+    if(showingOriginal||!probabilities)return; const mask=maskCanvas(),m=mask.getContext('2d').getImageData(0,0,w,h).data,src=sourceImage.getContext('2d').getImageData(0,0,w,h),dst=out.createImageData(w,h),hex=ui.color.value,r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5),16),targetLum=.299*r+.587*g+.114*b,alpha=+ui.opacity.value/100,debug=false;
     dst.data.set(src.data); for(let i=0;i<w*h;i++){const a=(m[4*i]/255)*alpha;if(a<.01)continue;const q=4*i;if(debug){dst.data[q]=255;dst.data[q+1]=45;dst.data[q+2]=130;continue;}const lum=.299*src.data[q]+.587*src.data[q+1]+.114*src.data[q+2],k=Math.max(.38,Math.min(1.65,lum/(targetLum||1)));dst.data[q]=src.data[q]*(1-a)+Math.min(255,r*k)*a;dst.data[q+1]=src.data[q+1]*(1-a)+Math.min(255,g*k)*a;dst.data[q+2]=src.data[q+2]*(1-a)+Math.min(255,b*k)*a;}
     out.putImageData(dst,0,0);
   }
@@ -169,8 +175,6 @@
 
   ui.color.addEventListener('input',()=>{ui.code.textContent=ui.color.value.toUpperCase();render();});
   ui.opacity.addEventListener('input',()=>{ui.opacityValue.textContent=ui.opacity.value+'%';render();});
-  ui.threshold.addEventListener('input',()=>{ui.thresholdValue.textContent=Math.round(ui.threshold.value*100)+'%';render();});
-  ui.showMask.addEventListener('change',render);
   ui.compare.addEventListener('mousedown',()=>{showingOriginal=true;render();});
   ui.compare.addEventListener('mouseup',()=>{showingOriginal=false;render();});
   ui.compare.addEventListener('mouseleave',()=>{showingOriginal=false;render();});
@@ -186,7 +190,6 @@
   });
 
   // ===== Кнопка «Распознать заново» =====
-  if(ui.recognize) ui.recognize.addEventListener('click',()=>{ if(sourceImage) recognize(); });
 
   // ===== Кнопка «Сохранить результат» =====
   if(ui.save) ui.save.addEventListener('click',()=>{
