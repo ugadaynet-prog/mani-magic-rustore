@@ -1,0 +1,453 @@
+{
+ "work_side": 1024,
+ "items": [
+  {
+   "id": "01",
+   "file": "01.jpg",
+   "part": "cc0",
+   "origin": "0375ada3-eea.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "02",
+   "file": "02.jpg",
+   "part": "cc0",
+   "origin": "04c797bc-d0e.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "03",
+   "file": "03.jpg",
+   "part": "cc0",
+   "origin": "073c76a6-581.jpg",
+   "w": 1024,
+   "h": 521
+  },
+  {
+   "id": "04",
+   "file": "04.jpg",
+   "part": "cc0",
+   "origin": "099ccdf9-96a.jpg",
+   "w": 822,
+   "h": 1024
+  },
+  {
+   "id": "05",
+   "file": "05.jpg",
+   "part": "cc0",
+   "origin": "09ca080a-b5b.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "06",
+   "file": "06.jpg",
+   "part": "cc0",
+   "origin": "10f999fa-2ca.jpg",
+   "w": 802,
+   "h": 1024
+  },
+  {
+   "id": "07",
+   "file": "07.jpg",
+   "part": "cc0",
+   "origin": "1562d574-8e5.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "08",
+   "file": "08.jpg",
+   "part": "cc0",
+   "origin": "156c68e2-4fa.jpg",
+   "w": 685,
+   "h": 1024
+  },
+  {
+   "id": "09",
+   "file": "09.jpg",
+   "part": "cc0",
+   "origin": "169bf32d-a2b.jpg",
+   "w": 1024,
+   "h": 1024
+  },
+  {
+   "id": "10",
+   "file": "10.jpg",
+   "part": "cc0",
+   "origin": "16d9b975-b84.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "11",
+   "file": "11.jpg",
+   "part": "cc0",
+   "origin": "24729c77-066.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "12",
+   "file": "12.jpg",
+   "part": "cc0",
+   "origin": "2d244411-f1f.jpg",
+   "w": 1024,
+   "h": 1024
+  },
+  {
+   "id": "13",
+   "file": "13.jpg",
+   "part": "cc0",
+   "origin": "2e27feab-1c3.jpg",
+   "w": 683,
+   "h": 1024
+  },
+  {
+   "id": "14",
+   "file": "14.jpg",
+   "part": "cc0",
+   "origin": "30af8719-af5.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "15",
+   "file": "15.jpg",
+   "part": "cc0",
+   "origin": "32c1fe92-6b3.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "16",
+   "file": "16.jpg",
+   "part": "cc0",
+   "origin": "348e524e-2a8.jpg",
+   "w": 960,
+   "h": 638
+  },
+  {
+   "id": "17",
+   "file": "17.jpg",
+   "part": "cc0",
+   "origin": "3607b9f4-923.jpg",
+   "w": 1024,
+   "h": 678
+  },
+  {
+   "id": "18",
+   "file": "18.jpg",
+   "part": "cc0",
+   "origin": "382c63a6-c95.jpg",
+   "w": 768,
+   "h": 1024
+  },
+  {
+   "id": "19",
+   "file": "19.jpg",
+   "part": "cc0",
+   "origin": "573a2bb0-381.jpg",
+   "w": 683,
+   "h": 1024
+  },
+  {
+   "id": "20",
+   "file": "20.jpg",
+   "part": "cc0",
+   "origin": "57934314-2d6.jpg",
+   "w": 1024,
+   "h": 1024
+  },
+  {
+   "id": "21",
+   "file": "21.jpg",
+   "part": "cc0",
+   "origin": "586dc1ba-7dc.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "22",
+   "file": "22.jpg",
+   "part": "cc0",
+   "origin": "5f8ea781-557.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "23",
+   "file": "23.jpg",
+   "part": "cc0",
+   "origin": "62b325d7-e48.jpg",
+   "w": 769,
+   "h": 1024
+  },
+  {
+   "id": "24",
+   "file": "24.jpg",
+   "part": "cc0",
+   "origin": "630f3294-687.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "25",
+   "file": "25.jpg",
+   "part": "cc0",
+   "origin": "6493b2c1-8fa.jpg",
+   "w": 563,
+   "h": 1024
+  },
+  {
+   "id": "26",
+   "file": "26.jpg",
+   "part": "cc0",
+   "origin": "64ed378a-409.jpg",
+   "w": 1024,
+   "h": 726
+  },
+  {
+   "id": "27",
+   "file": "27.jpg",
+   "part": "cc0",
+   "origin": "6af00632-01d.jpg",
+   "w": 1024,
+   "h": 768
+  },
+  {
+   "id": "28",
+   "file": "28.jpg",
+   "part": "cc0",
+   "origin": "715530c2-f50.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "29",
+   "file": "29.jpg",
+   "part": "cc0",
+   "origin": "72149123-40b.jpg",
+   "w": 1024,
+   "h": 779
+  },
+  {
+   "id": "30",
+   "file": "30.jpg",
+   "part": "cc0",
+   "origin": "72e18619-98c.jpg",
+   "w": 1024,
+   "h": 1024
+  },
+  {
+   "id": "31",
+   "file": "31.jpg",
+   "part": "cc0",
+   "origin": "7cdea055-be1.jpg",
+   "w": 1024,
+   "h": 682
+  },
+  {
+   "id": "32",
+   "file": "32.jpg",
+   "part": "cc0",
+   "origin": "933ca8b6-6c5.jpg",
+   "w": 1024,
+   "h": 681
+  },
+  {
+   "id": "33",
+   "file": "33.jpg",
+   "part": "cc0",
+   "origin": "93d8a0d7-71e.jpg",
+   "w": 768,
+   "h": 1024
+  },
+  {
+   "id": "34",
+   "file": "34.jpg",
+   "part": "cc0",
+   "origin": "94ab19c7-ccb.jpg",
+   "w": 1023,
+   "h": 685
+  },
+  {
+   "id": "35",
+   "file": "35.jpg",
+   "part": "cc0",
+   "origin": "96143fb9-fc9.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "36",
+   "file": "36.jpg",
+   "part": "cc0",
+   "origin": "a23f6053-a5d.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "37",
+   "file": "37.jpg",
+   "part": "cc0",
+   "origin": "a9913c4e-b4b.jpg",
+   "w": 683,
+   "h": 1024
+  },
+  {
+   "id": "38",
+   "file": "38.jpg",
+   "part": "cc0",
+   "origin": "ad657496-0f5.jpg",
+   "w": 1024,
+   "h": 1024
+  },
+  {
+   "id": "39",
+   "file": "39.jpg",
+   "part": "cc0",
+   "origin": "ae22febd-0f5.jpg",
+   "w": 683,
+   "h": 1024
+  },
+  {
+   "id": "40",
+   "file": "40.jpg",
+   "part": "cc0",
+   "origin": "b67179a5-478.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "41",
+   "file": "41.jpg",
+   "part": "cc0",
+   "origin": "bb84d0a2-b98.jpg",
+   "w": 881,
+   "h": 1024
+  },
+  {
+   "id": "42",
+   "file": "42.jpg",
+   "part": "cc0",
+   "origin": "c2f55fbf-174.jpg",
+   "w": 736,
+   "h": 985
+  },
+  {
+   "id": "43",
+   "file": "43.jpg",
+   "part": "cc0",
+   "origin": "cfe62886-2e8.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "44",
+   "file": "44.jpg",
+   "part": "cc0",
+   "origin": "de086e7d-946.jpg",
+   "w": 960,
+   "h": 540
+  },
+  {
+   "id": "45",
+   "file": "45.jpg",
+   "part": "cc0",
+   "origin": "df5d7672-2c0.jpg",
+   "w": 1024,
+   "h": 1024
+  },
+  {
+   "id": "46",
+   "file": "46.jpg",
+   "part": "cc0",
+   "origin": "e015d7ff-8eb.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "47",
+   "file": "47.jpg",
+   "part": "cc0",
+   "origin": "e4175d00-2ae.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "48",
+   "file": "48.jpg",
+   "part": "cc0",
+   "origin": "e6a26985-749.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "49",
+   "file": "49.jpg",
+   "part": "cc0",
+   "origin": "e8a045bd-1eb.jpg",
+   "w": 1024,
+   "h": 791
+  },
+  {
+   "id": "50",
+   "file": "50.jpg",
+   "part": "cc0",
+   "origin": "ee4aaa49-98f.jpg",
+   "w": 1024,
+   "h": 680
+  },
+  {
+   "id": "51",
+   "file": "51.jpg",
+   "part": "cc0",
+   "origin": "eeb23e27-915.jpg",
+   "w": 1024,
+   "h": 682
+  },
+  {
+   "id": "52",
+   "file": "52.jpg",
+   "part": "cc0",
+   "origin": "f98c6b1d-4de.jpg",
+   "w": 778,
+   "h": 1024
+  },
+  {
+   "id": "53",
+   "file": "53.jpg",
+   "part": "cc0",
+   "origin": "fc072972-3cd.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "54",
+   "file": "54.jpg",
+   "part": "cc0",
+   "origin": "fd42351d-b4e.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "55",
+   "file": "55.jpg",
+   "part": "cc0",
+   "origin": "fe3e7885-a46.jpg",
+   "w": 1024,
+   "h": 683
+  },
+  {
+   "id": "56",
+   "file": "56.jpg",
+   "part": "cc0",
+   "origin": "ff8b1181-b85.jpg",
+   "w": 1024,
+   "h": 683
+  }
+ ]
+}
