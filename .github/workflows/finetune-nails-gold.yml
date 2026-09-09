@@ -62,6 +62,10 @@ on:
         description: 'Доля кадров, где часть ногтей делается голыми (0.25 — лечит «идёт за лаком»)'
         required: false
         default: '0'
+      cc0:
+        description: 'Добавить в обучение размеченные CC0-кадры из ml/labels5 (yes/no)'
+        required: false
+        default: 'no'
       with_control:
         description: 'Взять в обучение часть «контроль» — чужие снимки (yes/no)'
         required: false
@@ -135,6 +139,13 @@ jobs:
           done
           python3 -c "import zipfile; zipfile.ZipFile('gold-dataset.zip').extractall('.')"
           echo "Ручных кадров: $(ls dataset_gold/images | wc -l)"
+
+      # CC0-кадры лежат в самом репозитории: права на них отданы явно, шифровать
+      # нечего. Поэтому они добавляются к уже распакованному набору, а не
+      # приезжают вместе с ним.
+      - name: Добавить CC0-кадры в обучение
+        if: github.event.inputs.cc0 == 'yes'
+        run: python add_cc0.py
 
       - name: Собрать автоматический набор
         run: python prepare_clean.py
@@ -228,6 +239,7 @@ jobs:
             ""|0|0.0) ;;
             *) SUF="$SUF-nude${{ github.event.inputs.nude }}" ;;
           esac
+          [ "${{ github.event.inputs.cc0 }}" = "yes" ] && SUF="$SUF-cc0"
           [ "${{ github.event.inputs.with_control }}" = "yes" ] && SUF="$SUF-ctl"
           [ "${{ github.event.inputs.all_gold }}" = "yes" ] && SUF="$SUF-all"
           echo "Суффикс результатов: '$SUF'"
