@@ -45,3 +45,9 @@ ml/labels3/*.jpg
 # убирать. Собираются в CI, результат уезжает в Release под своим именем.
 ml/best.pt
 ml/checkpoint.pt
+# Четвёртый круг — CC0-снимки из Openverse (ml/fetch_cc0.py): фотографии и кэш
+# восстанавливаются скриптом, маски и отчёты версионируются.
+ml/labels5/photos/
+ml/labels5/cache/
+ml/labels5/**/*.jpg
+ml/labels5/*.jpg
