@@ -42,15 +42,23 @@ SKIP_IF_FRAC = 0.10
 
 
 def probs(sess, im, size):
-    """Карта вероятностей в размер фотографии — как это делает приложение."""
+    """Карта вероятностей в СВОЁМ разрешении модели, size×size.
+
+    Наверх её тянуть нельзя: exam.py и приложение сначала режут по порогу, а
+    потом растягивают ближайшим соседом. Если растянуть вероятности линейно и
+    резать уже наверху, граница пятна получается другой — я на этом обжёгся
+    9 сентября и намерил лишнего вдвое больше, чем показывает экзамен.
+    Комбинировать проходы (зеркало, вырезка) надо здесь, до порога.
+    """
     x = np.asarray(exam.letterbox(im, size), np.float32) / 255.0
     lg = sess.run(None, {sess.get_inputs()[0].name:
                          np.transpose(x, (2, 0, 1))[None]})[0][0, 0]
-    p = 1.0 / (1.0 + np.exp(-lg))
-    side = max(im.size)
-    p = cv2.resize(p, (side, side), interpolation=cv2.INTER_LINEAR)
-    ox, oy = (side - im.width) // 2, (side - im.height) // 2
-    return p[oy:oy + im.height, ox:ox + im.width]
+    return 1.0 / (1.0 + np.exp(-lg))
+
+
+def to_frame(p, im):
+    """Порог и возврат в размер фотографии — тот же путь, что в exam.py."""
+    return exam.unletterbox(p > exam.THRESHOLD, im.width, im.height)
 
 
 def mirrored(sess, im, size):
@@ -77,19 +85,18 @@ def crop_box(mask, w, h):
     return x0, y0, x1, y1
 
 
-def two_pass(sess, im, size, base):
-    """Второй проход по вырезке вокруг найденного; берём максимум вероятностей."""
-    first = base > exam.THRESHOLD
-    if not first.any() or first.mean() > SKIP_IF_FRAC:
-        return base
-    box = crop_box(first, im.width, im.height)
+def two_pass(sess, im, size, base_mask):
+    """Второй проход по вырезке вокруг найденного, уже в системе координат кадра."""
+    if not base_mask.any() or base_mask.mean() > SKIP_IF_FRAC:
+        return base_mask
+    box = crop_box(base_mask, im.width, im.height)
     if box is None:
-        return base
+        return base_mask
     x0, y0, x1, y1 = box
     sub = im.crop(box)
-    p2 = probs(sess, sub, size)
-    out = base.copy()
-    out[y0:y1, x0:x1] = np.maximum(out[y0:y1, x0:x1], p2)
+    m2 = to_frame(probs(sess, sub, size), sub)
+    out = base_mask.copy()
+    out[y0:y1, x0:x1] |= m2
     return out
 
 
@@ -105,18 +112,18 @@ def score(work, sess, size, mode):
         rgb = np.asarray(im)
         gt = np.asarray(Image.open(ip))
         if mode == 'как есть':
-            p = probs(sess, im, size)
+            m = to_frame(probs(sess, im, size), im)
         elif mode == 'зеркало-макс':
-            p = mirrored(sess, im, size)[0]
+            m = to_frame(mirrored(sess, im, size)[0], im)
         elif mode == 'зеркало-средн':
-            p = mirrored(sess, im, size)[1]
+            m = to_frame(mirrored(sess, im, size)[1], im)
         elif mode == 'два прохода':
-            p = two_pass(sess, im, size, probs(sess, im, size))
+            m = two_pass(sess, im, size, to_frame(probs(sess, im, size), im))
         elif mode == 'зеркало+два':
-            p = two_pass(sess, im, size, mirrored(sess, im, size)[1])
+            m = two_pass(sess, im, size, to_frame(mirrored(sess, im, size)[1], im))
         else:
             raise SystemExit('неизвестный режим ' + mode)
-        pred = clean_masks.clean(rgb, (p > exam.THRESHOLD).astype(np.uint8))[0].astype(bool)
+        pred = clean_masks.clean(rgb, m.astype(np.uint8))[0].astype(bool)
         r = exam.score_frame(gt, pred)
         r['part'] = t['part']
         rows.append(r)
