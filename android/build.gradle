@@ -28,11 +28,13 @@ allprojects {
         mavenCentral()
         // RuStore Pay SDK — платежи внутри приложения (обязателен для цифрового
         // товара, продаваемого через RuStore; веб-оплата ЮKassa внутри стора запрещена).
-        // ВНИМАНИЕ: VK мигрировал с JFrog Artifactory на Sonatype Nexus — сменились и хост,
-        // и путь (/artifactory/ -> /repository/). Старый адрес остался DNS-алиасом на новый
-        // сервер и отдаёт nginx 404 на ЛЮБОЙ путь, из-за чего это выглядит как «репозиторий
-        // лежит», хотя он жив. Документация RuStore на момент правки показывает старый URL.
-        maven { url = uri("https://nexus-external.vkteam.ru/repository/maven-rustore-exposed/") }
+        // История хоста репозитория (менялся дважды):
+        //   1) artifactory-external.vkpartner.ru/artifactory/... — JFrog, отключается 30.09.2026;
+        //   2) nexus-external.vkteam.ru/repository/...            — промежуточный VK-хост;
+        //   3) nexus-external.rustore.ru/repository/...           — канонический домен RuStore ← сейчас.
+        // Переведено 10.09.2026 по уведомлению RuStore (все три какое-то время работали
+        // параллельно). Проверено: новый адрес отдаёт ru.rustore.sdk:bom:2026.07.01.
+        maven { url = uri("https://nexus-external.rustore.ru/repository/maven-rustore-exposed/") }
     }
 }
 
