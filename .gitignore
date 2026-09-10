@@ -56,3 +56,13 @@ ml/labels6/photos/
 ml/labels6/cache/
 ml/labels6/**/*.jpg
 ml/labels6/*.jpg
+ml/labels7/photos/
+ml/labels7/cache/
+ml/labels7/**/*.jpg
+ml/labels7/*.jpg
+ml/labels8/photos/
+ml/labels8/cache/
+ml/labels8/**/*.jpg
+ml/labels8/*.jpg
+# Обучающая часть снимков владельца — промежуточная папка перед шифрованием.
+ml/own-train/
