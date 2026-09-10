@@ -1,7 +1,7 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
-  const ui = { start:$('startCard'), editor:$('editor'), camera:$('cameraInput'), gallery:$('galleryInput'), model:$('modelStatus'), canvas:$('resultCanvas'), busy:$('busy'), color:$('colorInput'), code:$('colorCode'), opacity:$('opacity'), opacityValue:$('opacityValue'), status:$('editorStatus'), toast:$('toast'), compare:$('compareBtn'), palette:$('palette'), newPhoto:$('newPhotoBtn'), share:$('shareBtn'), save:$('saveBtn') };
+  const ui = { start:$('startCard'), editor:$('editor'), camera:$('cameraInput'), gallery:$('galleryInput'), model:$('modelStatus'), canvas:$('resultCanvas'), busy:$('busy'), color:$('colorInput'), code:$('colorCode'), opacity:$('opacity'), opacityValue:$('opacityValue'), status:$('editorStatus'), toast:$('toast'), compare:$('compareBtn'), palette:$('palette'), newPhoto:$('newPhotoBtn'), share:$('shareBtn'), save:$('saveBtn'), undo:$('undoBtn') };
   const colors = ['#F5D0C5','#D98A91','#F04479','#D81B60','#A81748','#8B2F67','#7446B8','#335CC7','#1597A5','#3BAA70','#D6A522','#17171B'];
   ui.wrap = $('canvasWrap');
   let sourceBitmap, sourceImage, probabilities, geometry, showingOriginal = false;
@@ -43,13 +43,14 @@
     ? window.Capacitor.Plugins.NailSegmentation
     : null;
 
-  function toast(text, action){
+  // Всплывающая подсказка только сообщает. Нажимать на неё пробовали —
+  // на телефоне не работает: она висит у самого низа экрана, где касания
+  // забирает системная полоса жестов. Действия живут в кнопках.
+  function toast(text){
     ui.toast.textContent = text;
     ui.toast.classList.remove('hidden');
-    ui.toast.classList.toggle('tappable', !!action);
-    ui.toast.onclick = action ? () => { ui.toast.classList.add('hidden'); action(); } : null;
     clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => ui.toast.classList.add('hidden'), action ? 4200 : 2400);
+    toast.timer = setTimeout(() => ui.toast.classList.add('hidden'), 2400);
   }
   function setStatus(el, text, kind=''){ el.textContent=text; el.className='status '+kind; }
   function selectedColor(hex){ ui.color.value=hex; ui.code.textContent=hex.toUpperCase(); document.querySelectorAll('.swatch').forEach(x=>x.classList.toggle('active',x.dataset.color.toLowerCase()===hex.toLowerCase())); render(); }
@@ -188,14 +189,19 @@
     const idx = new Int32Array(cells), val = new Float32Array(cells.length);
     for(let k = 0; k < cells.length; k++){ val[k] = probabilities[cells[k]]; probabilities[cells[k]] = 0; }
     lastErased = { idx, val };
+    if(ui.undo) ui.undo.classList.remove('hidden');
     render();
     return true;
   }
   function undoErase(){
     if(!lastErased) return;
     for(let k = 0; k < lastErased.idx.length; k++) probabilities[lastErased.idx[k]] = lastErased.val[k];
-    lastErased = null; render(); toast('Вернул');
+    lastErased = null;
+    if(ui.undo) ui.undo.classList.add('hidden');
+    render();
+    toast('Пятно вернулось');
   }
+  if(ui.undo) ui.undo.addEventListener('click', undoErase);
 
   // Жесты. Одиночное касание отделяем от двойного по времени, поэтому стирание
   // срабатывает с задержкой в четверть секунды: иначе двойной тап успевал бы
@@ -253,7 +259,7 @@
       lastTap = now;
       const cx = e.clientX, cy = e.clientY;
       tapTimer = setTimeout(() => {
-        if(eraseAt(cx, cy)) toast('Пятно убрано · нажмите, чтобы вернуть', undoErase);
+        if(eraseAt(cx, cy)) toast('Пятно убрано');
       }, 260);
     });
     ui.wrap.addEventListener('pointercancel', e => { pts.delete(e.pointerId); pinch = null; panning = null; });
@@ -330,6 +336,7 @@
       probabilities = await decodeMaskToProbabilities(maskDataUrl);
       geometry = computeGeometry(w, h, maskSide);
       lastErased = null;
+      if(ui.undo) ui.undo.classList.add('hidden');
       resetView();
       render();
       const hint = advice(blobCount());
