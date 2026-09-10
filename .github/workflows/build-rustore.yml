@@ -68,7 +68,7 @@ jobs:
         run: |
           M=android/app/src/main/assets/models/nail-unet.onnx
           test -f "$M" || { echo "::error::Модели нет в $M — примерка не заработает"; exit 1; }
-          echo "70441dd0b34a5d567a93a7870a118c76a4842d1ee6c658d0307650624305580e  $M" | sha256sum --check
+          echo "816e276505d7298ee9dc2c22422355455d511713b7d751a05a70b06b398c7150  $M" | sha256sum --check
           echo "Модель на месте: $(du -h "$M" | cut -f1)"
 
       - name: Восстановить ключ подписи из секрета
