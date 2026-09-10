@@ -52,3 +52,7 @@ ml/labels5/cache/
 ml/labels5/**/*.jpg
 ml/labels5/*.jpg
 ml/best-clean.pt
+ml/labels6/photos/
+ml/labels6/cache/
+ml/labels6/**/*.jpg
+ml/labels6/*.jpg
