@@ -9,6 +9,11 @@
 
     python add_cc0.py                       # добавить в dataset_gold
     python add_cc0.py --dry                 # только показать, что добавится
+    python add_cc0.py --src own --prefix own- --tag own   # снимки владельца
+
+Тот же путь годится и для снимков владельца (labels6): они приезжают в CI
+зашифрованными собственным ключом OWN_KEY, расшифровываются в папку own/ и
+добавляются к набору этим же скриптом.
 
 Кадры идут ТОЛЬКО в обучение. Экзамены не трогаем: если положить их в
 проверку, «до» и «после» станут несравнимы, а вся затея с эталоном была ради
@@ -29,6 +34,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--src', default=SRC)
     ap.add_argument('--out', default=OUT)
+    ap.add_argument('--prefix', default=PREFIX,
+                    help='приставка к именам кадров в наборе (cc0-, own-)')
+    ap.add_argument('--tag', default='cc0',
+                    help='под каким ключом записать список в split.json')
     ap.add_argument('--dry', action='store_true')
     args = ap.parse_args()
 
@@ -45,7 +54,7 @@ def main():
 
     added = []
     for iid in ids:
-        name = PREFIX + iid
+        name = args.prefix + iid
         if name in split['train']:
             continue
         if not args.dry:
@@ -59,7 +68,7 @@ def main():
 
     if not args.dry:
         split['train'] = split['train'] + added
-        split['cc0'] = added
+        split[args.tag] = added
         with open(split_path, 'w', encoding='utf-8') as fh:
             json.dump(split, fh, ensure_ascii=False, indent=1)
 

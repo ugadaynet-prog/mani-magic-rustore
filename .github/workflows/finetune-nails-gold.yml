@@ -66,6 +66,10 @@ on:
         description: 'Добавить в обучение размеченные CC0-кадры из ml/labels5 (yes/no)'
         required: false
         default: 'no'
+      own:
+        description: 'Добавить в обучение снимки владельца из кабинета (yes/no)'
+        required: false
+        default: 'no'
       with_control:
         description: 'Взять в обучение часть «контроль» — чужие снимки (yes/no)'
         required: false
@@ -146,6 +150,39 @@ jobs:
       - name: Добавить CC0-кадры в обучение
         if: github.event.inputs.cc0 == 'yes'
         run: python add_cc0.py
+
+      # Снимки владельца — руки клиенток, в открытом репозитории им не место.
+      # Они лежат в релизе зашифрованными отдельным ключом OWN_KEY (свой, а не
+      # DECK_KEY: тот живёт только в секретах, и перешифровать им новый набор
+      # было нечем). Ключ потерять не страшно: оригиналы у владельца, проще
+      # сгенерировать новый и перешифровать.
+      - name: Добавить снимки владельца в обучение
+        if: github.event.inputs.own == 'yes'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWN_KEY: ${{ secrets.OWN_KEY }}
+        run: |
+          if [ -z "$OWN_KEY" ]; then
+            echo "::error::Секрет OWN_KEY пуст — расшифровать снимки владельца нечем."
+            exit 1
+          fi
+          python3 - <<'EOF'
+          import json, os, urllib.request
+          tok = os.environ['GH_TOKEN']
+          url = f"https://api.github.com/repos/{os.environ['REPO']}/releases/tags/{os.environ['RELEASE_TAG']}"
+          rel = json.load(urllib.request.urlopen(urllib.request.Request(
+              url, headers={'Authorization': f'token {tok}'})))
+          a = next(x for x in rel['assets'] if x['name'] == 'own-dataset.zip.enc')
+          r = urllib.request.Request(a['url'], headers={
+              'Authorization': f'token {tok}', 'Accept': 'application/octet-stream'})
+          with urllib.request.urlopen(r) as src, open('own-dataset.zip.enc', 'wb') as out:
+              out.write(src.read())
+          print('Беру own-dataset.zip.enc', a['size'], 'байт')
+          EOF
+          openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 \
+            -in own-dataset.zip.enc -out own-dataset.zip -pass env:OWN_KEY
+          python3 -c "import zipfile; zipfile.ZipFile('own-dataset.zip').extractall('.')"
+          python add_cc0.py --src own --prefix own- --tag own
 
       - name: Собрать автоматический набор
         run: python prepare_clean.py
@@ -240,6 +277,7 @@ jobs:
             *) SUF="$SUF-nude${{ github.event.inputs.nude }}" ;;
           esac
           [ "${{ github.event.inputs.cc0 }}" = "yes" ] && SUF="$SUF-cc0"
+          [ "${{ github.event.inputs.own }}" = "yes" ] && SUF="$SUF-own"
           [ "${{ github.event.inputs.with_control }}" = "yes" ] && SUF="$SUF-ctl"
           [ "${{ github.event.inputs.all_gold }}" = "yes" ] && SUF="$SUF-all"
           echo "Суффикс результатов: '$SUF'"
