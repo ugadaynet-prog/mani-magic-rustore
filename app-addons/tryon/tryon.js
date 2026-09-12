@@ -13,6 +13,28 @@
     render();
   }
   ui.wrap = $('canvasWrap');
+  if (window.Capacitor?.isNativePlatform?.()) {
+    const applyInsets = async (tries = 20) => {
+      const plugin = window.Capacitor.Plugins?.Insets;
+      if (!plugin?.get) return;
+      try {
+        const result = await plugin.get();
+        if (!result?.ready && tries > 0) { setTimeout(() => applyInsets(tries - 1), 150); return; }
+        if (!result) return;
+        const num = value => Math.max(0, Math.round(Number(value) || 0));
+        const bottom = num(result.bottom);
+        const top = num(result.top) < 8 && bottom > 0 ? 28 : num(result.top);
+        const style = document.documentElement.style;
+        style.setProperty('--safe-top', top + 'px');
+        style.setProperty('--safe-bottom', bottom + 'px');
+        style.setProperty('--safe-left', num(result.left) + 'px');
+        style.setProperty('--safe-right', num(result.right) + 'px');
+      } catch {}
+    };
+    applyInsets();
+    window.addEventListener('resize', () => applyInsets(3));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) applyInsets(3); });
+  }
   let sourceBitmap, sourceImage, probabilities, geometry, showingOriginal = false;
   // Что стёрли последним касанием — чтобы промах можно было отменить.
   let lastErased = null;

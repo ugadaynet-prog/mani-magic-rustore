@@ -2,7 +2,7 @@
 :root[data-theme="light"] { --bg:#fafafa; --paper:#202125; --surface:#eeeeef; --surface2:#e3e3e6; --border:#c7c6ca; --muted:#636168; --pink:#b9204c; color-scheme:light; }
 * { letter-spacing:0; }
 html,body { height:100%; overflow:hidden; }
-body { display:flex; flex-direction:column; padding-bottom:calc(76px + var(--safe-bottom)); }
+body { display:flex; flex-direction:column; padding-bottom:calc(76px + var(--safe-bottom)); padding-left:var(--safe-left,0px); padding-right:var(--safe-right,0px); }
 button, input, .pick { font-family:inherit; font-size:14px; border-radius:8px; }
 button:focus-visible, a:focus-visible, input:focus-visible, .pick:focus-within { outline:2px solid var(--pink); outline-offset:2px; }
 button svg { width:19px; height:19px; }
@@ -45,6 +45,7 @@ main { flex:1; min-height:0; width:min(920px,100%); padding:12px 16px; overflow:
 #editorStatus { grid-column:1 / -1; font-size:12px; min-height:0; margin:0; }
 .tryon-nav { position:fixed; bottom:0; left:0; right:0; height:calc(76px + var(--safe-bottom)); padding:6px 8px calc(8px + var(--safe-bottom)); border-top:1px solid var(--border); background:var(--bg); display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); z-index:10; }
 .tryon-nav a { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; color:var(--muted); text-decoration:none; font-size:11px; }
+.tryon-nav { padding-left:max(8px,var(--safe-left,0px)); padding-right:max(8px,var(--safe-right,0px)); }
 .tryon-nav svg { width:22px; height:22px; stroke-width:1.6; }
 .tryon-nav a[aria-current] { color:var(--pink); }
 .toast { bottom:calc(88px + var(--safe-bottom)); border-radius:8px; }
