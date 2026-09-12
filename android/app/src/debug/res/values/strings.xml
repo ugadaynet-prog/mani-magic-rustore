@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MANI Magic Preview</string>
+    <string name="title_activity_main">MANI Magic Preview</string>
+    <string name="package_name">app.manimagic.rustore.preview</string>
+    <string name="custom_url_scheme">app.manimagic.rustore.preview</string>
+    <string name="rustore_pay_scheme">manimagicpreviewpay</string>
+</resources>

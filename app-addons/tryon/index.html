@@ -6,18 +6,19 @@
 <meta name="theme-color" content="#0d0d10">
 <title>Примерка маникюра — MANI Magic</title>
 <link rel="stylesheet" href="tryon.css">
+<link rel="stylesheet" href="experience-tryon.css">
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('maniMagicTheme')||'dark';}catch(e){}</script>
 </head>
 <body>
 <header class="topbar">
-  <a class="back" href="../index.html" aria-label="Назад">‹</a>
-  <div><h1>Примерка маникюра <span class="demo-badge">демо</span></h1><p>Фото обрабатывается на устройстве</p></div>
+  <a class="back" href="../index.html" aria-label="Назад"><i data-lucide="arrow-left"></i></a>
+  <div><h1>Примерка цвета <span class="demo-badge">демо</span></h1><p>MANI Magic</p></div>
 </header>
 <main>
   <section id="startCard" class="card start-card">
-    <div class="intro-icon">✦</div>
-    <h2>Посмотрите цвет на своих ногтях</h2>
-    <p>Сфотографируйте руку сверху при хорошем освещении. Пальцы лучше держать отдельно друг от друга.</p>
-    <p class="demo-note">Это демо-режим: распознавание иногда ошибается. Лишнее можно стереть касанием прямо на фото.</p>
+    <img class="start-photo" src="../assets/works/1-1.jpg" id="startPhoto" alt="Маникюр">
+    <h2>Твой следующий оттенок</h2>
+    <p>Фото остаётся на устройстве.</p>
     <div class="pick-row">
       <label class="primary pick">Сделать фото<input id="cameraInput" type="file" accept="image/*" capture="environment"></label>
       <label class="secondary pick">Выбрать из галереи<input id="galleryInput" type="file" accept="image/*"></label>
@@ -32,26 +33,37 @@
         <div id="busy" class="busy hidden"><span></span><b>Распознаю ногти…</b></div>
       </div>
       <div class="compare-row">
-        <button id="compareBtn" class="small-btn" type="button">Удерживайте: до</button>
-        <button id="undoBtn" class="small-btn undo hidden" type="button">Вернуть пятно</button>
-        <button id="newPhotoBtn" class="small-btn" type="button">Другое фото</button>
+        <div class="compare-switch" role="group" aria-label="Сравнение"><button id="compareBtn" class="small-btn" type="button" aria-pressed="false">До</button><button id="afterBtn" class="small-btn active" type="button" aria-pressed="true">После</button></div>
+        <button id="eraseBtn" class="small-btn" type="button" aria-pressed="false" title="Убрать лишнее"><i data-lucide="eraser"></i><span>Убрать лишнее</span></button>
+        <button id="undoBtn" class="small-btn undo hidden" type="button" aria-label="Отменить исправление" title="Отменить исправление"><i data-lucide="undo-2"></i></button>
+        <button id="newPhotoBtn" class="small-btn" type="button" aria-label="Другое фото" title="Другое фото"><i data-lucide="image-plus"></i></button>
       </div>
     </div>
 
     <section class="card controls">
-      <div class="control-title"><h2>Цвет покрытия</h2><output id="colorCode">#D81B60</output></div>
+      <div class="control-title"><h2>Цвет покрытия</h2><output id="colorCode">Малиновый</output></div>
       <div id="palette" class="palette" aria-label="Готовые цвета"></div>
       <label class="color-custom">Свой цвет <input id="colorInput" type="color" value="#d81b60"></label>
       <label class="range-row"><span>Интенсивность</span><output id="opacityValue">72%</output><input id="opacity" type="range" min="0" max="100" value="72"></label>
       <div class="action-row">
-        <button id="saveBtn" class="primary" type="button">Сохранить результат</button>
-        <button id="shareBtn" class="secondary" type="button">Поделиться</button>
+        <button id="saveBtn" class="primary" type="button"><i data-lucide="download"></i>Сохранить</button>
+        <button id="shareBtn" class="secondary" type="button"><i data-lucide="share-2"></i>Отправить</button>
       </div>
       <p id="editorStatus" class="status" role="status"></p>
     </section>
   </section>
 </main>
 <div id="toast" class="toast hidden" role="status"></div>
+<nav class="tryon-nav" aria-label="Основные разделы">
+  <a href="../index.html"><i data-lucide="layers"></i><span>Колода</span></a>
+  <a href="../index.html?view=catalog"><i data-lucide="layout-grid"></i><span>Каталог</span></a>
+  <a href="#" aria-current="page"><i data-lucide="scan"></i><span>Примерка</span></a>
+  <a href="../index.html?view=favorites"><i data-lucide="heart"></i><span>Избранное</span></a>
+  <a href="../index.html?view=diary"><i data-lucide="book-open"></i><span>Дневник</span></a>
+</nav>
+<script src="../lucide.min.js"></script>
+<script src="../data.js"></script>
+<script>document.getElementById('startPhoto').src=CARDS[0].works[0];window.lucide?.createIcons();</script>
 <script src="nail-seg-plugin.js"></script>
 <script src="tryon.js"></script>
 </body>

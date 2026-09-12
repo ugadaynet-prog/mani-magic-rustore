@@ -3,6 +3,15 @@
   const $ = id => document.getElementById(id);
   const ui = { start:$('startCard'), editor:$('editor'), camera:$('cameraInput'), gallery:$('galleryInput'), model:$('modelStatus'), canvas:$('resultCanvas'), busy:$('busy'), color:$('colorInput'), code:$('colorCode'), opacity:$('opacity'), opacityValue:$('opacityValue'), status:$('editorStatus'), toast:$('toast'), compare:$('compareBtn'), palette:$('palette'), newPhoto:$('newPhotoBtn'), share:$('shareBtn'), save:$('saveBtn'), undo:$('undoBtn') };
   const colors = ['#F5D0C5','#D98A91','#F04479','#D81B60','#A81748','#8B2F67','#7446B8','#335CC7','#1597A5','#3BAA70','#D6A522','#17171B'];
+  const colorNames = ['Нежно-розовый','Пыльная роза','Ярко-розовый','Малиновый','Вишнёвый','Сливовый','Фиолетовый','Синий','Бирюзовый','Зелёный','Золотистый','Графитовый'];
+  let eraseMode = false;
+  function compare(original) {
+    showingOriginal = original;
+    ui.compare.setAttribute('aria-pressed', String(original));
+    $('afterBtn').setAttribute('aria-pressed', String(!original));
+    $('afterBtn').classList.toggle('active', !original);
+    render();
+  }
   ui.wrap = $('canvasWrap');
   let sourceBitmap, sourceImage, probabilities, geometry, showingOriginal = false;
   // Что стёрли последним касанием — чтобы промах можно было отменить.
@@ -53,8 +62,8 @@
     toast.timer = setTimeout(() => ui.toast.classList.add('hidden'), 2400);
   }
   function setStatus(el, text, kind=''){ el.textContent=text; el.className='status '+kind; }
-  function selectedColor(hex){ ui.color.value=hex; ui.code.textContent=hex.toUpperCase(); document.querySelectorAll('.swatch').forEach(x=>x.classList.toggle('active',x.dataset.color.toLowerCase()===hex.toLowerCase())); render(); }
-  colors.forEach((color,i)=>{ const b=document.createElement('button'); b.type='button'; b.className='swatch'+(i===3?' active':''); b.style.background=color; b.dataset.color=color; b.setAttribute('aria-label','Цвет '+color); b.onclick=()=>selectedColor(color); ui.palette.appendChild(b); });
+  function selectedColor(hex){ ui.color.value=hex; ui.code.textContent=colorNames[colors.indexOf(hex.toUpperCase())] || 'Свой цвет'; ui.code.title=hex.toUpperCase(); document.querySelectorAll('.swatch').forEach(x=>{const active=x.dataset.color.toLowerCase()===hex.toLowerCase(); x.classList.toggle('active',active); x.setAttribute('aria-pressed',String(active));}); compare(false); }
+  colors.forEach((color,i)=>{ const b=document.createElement('button'); b.type='button'; b.className='swatch'+(i===3?' active':''); b.style.background=color; b.dataset.color=color; b.setAttribute('aria-label',colorNames[i]); b.title=colorNames[i]; b.setAttribute('aria-pressed',String(i===3)); b.onclick=()=>selectedColor(color); ui.palette.appendChild(b); });
 
   // Проверяем доступность нативного плагина при загрузке экрана.
   function checkNativePlugin(){
@@ -64,7 +73,7 @@
     console.log('checkNativePlugin: NailSeg.segment =', NailSeg && typeof NailSeg.segment);
     
     if (!window.Capacitor) {
-      setStatus(ui.model, 'DIAG: window.Capacitor отсутствует — Capacitor не инициализирован', 'error');
+      setStatus(ui.model, 'Распознавание доступно в Android-приложении. В браузере можно просмотреть выбранное фото.', '');
       return false;
     }
     if (!window.Capacitor.Plugins) {
@@ -80,7 +89,7 @@
       setStatus(ui.model, `DIAG: NailSeg.segment не функция (typeof=${typeof NailSeg.segment})`, 'error');
       return false;
     }
-    setStatus(ui.model, 'Плагин NailSegmentation готов ✓', 'ok');
+    setStatus(ui.model, 'Готово к примерке', 'ok');
     return true;
   }
 
@@ -111,17 +120,20 @@
 
   async function chooseFile(file){
     if(!file)return;
-    if(!checkNativePlugin()){
-      toast('Нативный плагин недоступен');
-      return;
-    }
+    const canRecognize = checkNativePlugin();
     try {
       setStatus(ui.model,'Открываю фотографию…');
       if(sourceBitmap&&sourceBitmap.close)sourceBitmap.close();
       sourceBitmap=await decodePhoto(file);
       sourceImage=makeSourceCanvas(sourceBitmap);
       ui.start.classList.add('hidden'); ui.editor.classList.remove('hidden');
-      await recognize();
+      if (canRecognize) await recognize();
+      else {
+        probabilities = null;
+        render();
+        setStatus(ui.status, 'Просмотр фото. Примерка оттенков доступна в Android-приложении.', '');
+        [ui.color, ui.opacity, ui.compare, $('afterBtn'), $('eraseBtn'), ui.save, ui.share, ...ui.palette.querySelectorAll('button')].forEach(button => button.disabled = true);
+      }
     } catch(e){ console.error(e); setStatus(ui.model,'Не удалось открыть фото: '+e.message,'error'); }
   }
   [ui.camera,ui.gallery].forEach(input=>input.addEventListener('change',()=>{chooseFile(input.files&&input.files[0]);input.value='';}));
@@ -154,6 +166,14 @@
     view.ty = Math.min(my, Math.max(-my, view.ty));
   }
   function resetView(){ view = { scale:1, tx:0, ty:0 }; applyView(); }
+  function fitCanvas(){
+    if (!sourceImage) return;
+    const scale = Math.min(ui.wrap.clientWidth / sourceImage.width, ui.wrap.clientHeight / sourceImage.height);
+    if (!(scale > 0)) return;
+    ui.canvas.style.width = sourceImage.width * scale + 'px';
+    ui.canvas.style.height = sourceImage.height * scale + 'px';
+  }
+  if (window.ResizeObserver) new ResizeObserver(() => { fitCanvas(); clampView(); applyView(); }).observe(ui.wrap);
   // Приблизить так, чтобы точка под пальцем осталась на месте.
   function zoomAt(px, py, next){
     const s0 = view.scale, s1 = Math.min(4, Math.max(1, next));
@@ -259,7 +279,7 @@
       lastTap = now;
       const cx = e.clientX, cy = e.clientY;
       tapTimer = setTimeout(() => {
-        if(eraseAt(cx, cy)) toast('Пятно убрано');
+        if(eraseMode && !showingOriginal && eraseAt(cx, cy)) toast('Пятно убрано');
       }, 260);
     });
     ui.wrap.addEventListener('pointercancel', e => { pts.delete(e.pointerId); pinch = null; panning = null; });
@@ -341,7 +361,7 @@
       render();
       const hint = advice(blobCount());
       if(hint) setStatus(ui.status, hint[0], hint[1]);
-      else setStatus(ui.status, 'Готово. Двойное касание — приблизить, одно — убрать лишнее пятно', 'ok');
+      else setStatus(ui.status, 'Готово', 'ok');
     } catch(e){
       console.error('recognize() error:', e);
       // Диагностический вывод: покажем тип ошибки, сообщение и stack
@@ -432,6 +452,7 @@
     return m;
   }
   function render(){
+    fitCanvas();
     if(!sourceImage)return; const w=sourceImage.width,h=sourceImage.height;ui.canvas.width=w;ui.canvas.height=h;const out=ui.canvas.getContext('2d');out.drawImage(sourceImage,0,0);
     if(showingOriginal||!probabilities)return; const mask=maskCanvas(),m=mask.getContext('2d').getImageData(0,0,w,h).data,src=sourceImage.getContext('2d').getImageData(0,0,w,h),dst=out.createImageData(w,h),hex=ui.color.value,r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5),16),targetLum=.299*r+.587*g+.114*b,alpha=+ui.opacity.value/100,debug=false;
     // Средняя яркость САМИХ ногтей. Раньше блик и тень считались от яркости
@@ -445,20 +466,21 @@
     dst.data.set(src.data); for(let i=0;i<w*h;i++){const p=m[4*i]/255,a=Math.min(1,Math.max(0,(p-(THRESHOLD-SOFT))/(2*SOFT)))*alpha;if(a<.01)continue;const q=4*i;if(debug){dst.data[q]=255;dst.data[q+1]=45;dst.data[q+2]=130;continue;}const lum=.299*src.data[q]+.587*src.data[q+1]+.114*src.data[q+2],k=Math.max(.55,Math.min(1.45,lum/(meanLum||1)));dst.data[q]=src.data[q]*(1-a)+Math.min(255,r*k)*a;dst.data[q+1]=src.data[q+1]*(1-a)+Math.min(255,g*k)*a;dst.data[q+2]=src.data[q+2]*(1-a)+Math.min(255,b*k)*a;}
     out.putImageData(dst,0,0);
   }
-  function resultDataUrl(){showingOriginal=false;render();return ui.canvas.toDataURL('image/jpeg',.92);}
+  function resultDataUrl(){compare(false);return ui.canvas.toDataURL('image/jpeg',.92);}
 
-  ui.color.addEventListener('input',()=>{ui.code.textContent=ui.color.value.toUpperCase();render();});
+  ui.color.addEventListener('input',()=>selectedColor(ui.color.value));
   ui.opacity.addEventListener('input',()=>{ui.opacityValue.textContent=ui.opacity.value+'%';render();});
-  ui.compare.addEventListener('mousedown',()=>{showingOriginal=true;render();});
-  ui.compare.addEventListener('mouseup',()=>{showingOriginal=false;render();});
-  ui.compare.addEventListener('mouseleave',()=>{showingOriginal=false;render();});
-  ui.compare.addEventListener('touchstart',e=>{e.preventDefault();showingOriginal=true;render();},{passive:false});
-  ui.compare.addEventListener('touchend',()=>{showingOriginal=false;render();});
+  ui.compare.addEventListener('click',()=>compare(true));
+  $('afterBtn').addEventListener('click',()=>compare(false));
+  $('eraseBtn').addEventListener('click',()=>{ eraseMode=!eraseMode; $('eraseBtn').setAttribute('aria-pressed',String(eraseMode)); if(eraseMode) compare(false); });
 
   // ===== Кнопка «Другое фото» =====
   if(ui.newPhoto) ui.newPhoto.addEventListener('click',()=>{
     if(sourceBitmap&&sourceBitmap.close)sourceBitmap.close();
     sourceBitmap=sourceImage=null; probabilities=null;
+    eraseMode = false; showingOriginal = false;
+    $('eraseBtn').setAttribute('aria-pressed','false');
+    ui.compare.setAttribute('aria-pressed','false'); $('afterBtn').setAttribute('aria-pressed','true');
     ui.editor.classList.add('hidden'); ui.start.classList.remove('hidden');
     setStatus(ui.status,'');
   });
