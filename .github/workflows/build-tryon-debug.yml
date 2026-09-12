@@ -66,6 +66,21 @@ jobs:
         working-directory: rustore-app/android
         run: chmod +x gradlew && ./gradlew assembleDebug
 
+      - name: Verify installable preview package and bundled content
+        working-directory: rustore-app/android
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort -V | tail -n 1)
+          "$AAPT" dump badging "$APK" > preview-package.txt
+          grep "package: name='app.manimagic.rustore.preview'" preview-package.txt
+          grep "application-label:'MANI Magic Preview'" preview-package.txt
+          unzip -p "$APK" assets/public/experience.js | grep -q 'maniMagicPolls'
+          unzip -p "$APK" assets/public/diary-store.js | grep -q 'maniMagicDiary'
+          unzip -p "$APK" assets/public/preview-build.js | grep -q 'buy.disabled = true'
+          unzip -p "$APK" assets/public/tryon/experience-tryon.css | grep -q 'tryon-nav'
+          unzip -p "$APK" assets/models/nail-unet.onnx | sha256sum | grep '^70441dd0b34a5d567a93a7870a118c76a4842d1ee6c658d0307650624305580e'
+          sha256sum "$APK"
+
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
