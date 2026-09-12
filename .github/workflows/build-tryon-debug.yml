@@ -67,6 +67,7 @@ jobs:
         run: chmod +x gradlew && ./gradlew assembleDebug
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: mani-magic-graphite-preview-apk
