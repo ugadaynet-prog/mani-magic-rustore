@@ -116,9 +116,11 @@ jobs:
           req = urllib.request.Request(url, headers={'Authorization': f'token {tok}'})
           rel = json.load(urllib.request.urlopen(req))
           want = {'deck-dataset.zip.enc', 'gold-dataset.zip.enc', 'best-clean.pt'}
+          optional = {'best-gold-576.pt'}
+          fetch = want | optional
           got = set()
           for a in rel.get('assets', []):
-              if a['name'] not in want:
+              if a['name'] not in fetch:
                   continue
               print(f"Беру {a['name']} ({a['size']/1e6:.1f} МБ)")
               r = urllib.request.Request(a['url'], headers={
@@ -196,8 +198,16 @@ jobs:
           TEXTURE_P: ${{ github.event.inputs.texture }}
           NUDE_P: ${{ github.event.inputs.nude }}
         run: |
+          INIT=best-clean.pt
+          # Для контрольного 576-прохода продолжаем от весов действующей
+          # сборки. Иначе эксперимент каждый раз фактически переучивает
+          # чистую модель и сравнение с приложением нечестно.
+          if [ "${{ github.event.inputs.size }}" = "576" ] && [ -f best-gold-576.pt ]; then
+            INIT=best-gold-576.pt
+          fi
+          echo "Стартовые веса: $INIT"
           python finetune.py \
-            --init best-clean.pt \
+            --init "$INIT" \
             --epochs "${{ github.event.inputs.epochs }}" \
             --out best-gold.pt \
             --save-at "${{ github.event.inputs.save_at }}" \
