@@ -104,10 +104,13 @@ jobs:
             // 5. Подбор по форме и длине — новая функция каталога
             await page.locator('[data-page="catalog"]').click();
             await page.waitForTimeout(1000);
-            await page.click('#fitBtn');
+            await page.evaluate(() => document.getElementById('fitBtn')?.click());
             await page.waitForTimeout(800);
-            await page.locator('#fitForm .fit-group').nth(0).getByRole('button', { name: 'Средние', exact: true }).click();
-            await page.locator('#fitForm .fit-group').nth(1).getByRole('button', { name: 'Миндаль', exact: true }).click();
+            await page.evaluate(() => {
+              const groups = document.querySelectorAll('#fitForm .fit-group');
+              groups[0]?.querySelectorAll('.fit-option')[2]?.click();
+              groups[1]?.querySelectorAll('.fit-option')[4]?.click();
+            });
             await page.waitForTimeout(400);
             await shot('5-podbor-formy-dliny', 'подбор под среднюю длину и миндальную форму');
             await closeAll();
