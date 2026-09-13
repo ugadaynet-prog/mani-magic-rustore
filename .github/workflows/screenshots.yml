@@ -131,7 +131,7 @@ jobs:
               // ключ ровно как в app/script.js (FAV_KEY), индексы — бесплатные карты
               localStorage.setItem('maniMagicFavorites', JSON.stringify([0, 3, 7, 10]));
             });
-            await page.reload({ waitUntil: 'networkidle' });
+            await page.reload({ waitUntil: 'domcontentloaded' });
             await page.waitForTimeout(7000);
             await page.locator('[data-page="favorites"]').click();
             await page.waitForTimeout(2000);
