@@ -190,6 +190,11 @@ def main():
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, args.epochs, eta_min=LR_MIN)
 
     best = base['recall'] + 0.1 * base['iou']
+    # Всегда сохраняем рабочую точку до первой эпохи. Если дообучение не
+    # улучшит контрольный score, экспорт всё равно должен получить веса, а не
+    # падать из-за отсутствующего best-gold.pt.
+    torch.save(net.state_dict(), args.out)
+    print(f'Начальные веса сохранены в {args.out}', flush=True)
     history = [dict(epoch=0, **base)]
     print(f'Порог для сохранения: {best:.4f} (счёт = полнота + 0.1×IoU)', flush=True)
 
