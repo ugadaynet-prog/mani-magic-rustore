@@ -65,7 +65,8 @@ jobs:
             async function closeAll() {
               await page.evaluate(() => {
                 ['filterOverlay','favOverlay','selOverlay','catalogOverlay',
-                 'paywallOverlay','qrOverlay','workOverlay','masterWorksOverlay']
+                 'fitOverlay','diaryOverlay','tryonOverlay','paywallOverlay','qrOverlay',
+                 'workOverlay','masterWorksOverlay']
                   .forEach(id => document.getElementById(id)?.classList.add('hidden'));
               });
               await page.waitForTimeout(400);
@@ -87,19 +88,21 @@ jobs:
             await closeAll();
 
             // 3. Каталог всех карт
-            await page.click('#catalogBtn');
+            await page.locator('[data-page="catalog"]').click();
             await page.waitForTimeout(2500);
             await shot('3-katalog', 'каталог 49 карт');
             await closeAll();
 
             // 4. Фильтр по цвету
+            await page.locator('[data-page="catalog"]').click();
+            await page.waitForTimeout(700);
             await page.click('#filterBtn');
             await page.waitForTimeout(1500);
             await shot('4-filtr', 'фильтр по цвету');
             await closeAll();
 
             // 5. Подбор по форме и длине — новая функция каталога
-            await page.click('#catalogBtn');
+            await page.locator('[data-page="catalog"]').click();
             await page.waitForTimeout(1000);
             await page.click('#fitBtn');
             await page.waitForTimeout(800);
@@ -116,7 +119,7 @@ jobs:
             });
             await page.reload({ waitUntil: 'networkidle' });
             await page.waitForTimeout(7000);
-            await page.click('#favBtn');
+            await page.locator('[data-page="favorites"]').click();
             await page.waitForTimeout(2000);
             await shot('6-izbrannoe', 'избранное');
 
