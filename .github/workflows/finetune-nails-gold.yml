@@ -116,7 +116,7 @@ jobs:
           req = urllib.request.Request(url, headers={'Authorization': f'token {tok}'})
           rel = json.load(urllib.request.urlopen(req))
           want = {'deck-dataset.zip.enc', 'gold-dataset.zip.enc', 'best-clean.pt'}
-          optional = {'best-gold-576.pt'}
+          optional = {'best-gold-512-shipped.pt'}
           fetch = want | optional
           got = set()
           for a in rel.get('assets', []):
@@ -199,11 +199,11 @@ jobs:
           NUDE_P: ${{ github.event.inputs.nude }}
         run: |
           INIT=best-clean.pt
-          # Для контрольного 576-прохода продолжаем от весов действующей
-          # сборки. Иначе эксперимент каждый раз фактически переучивает
-          # чистую модель и сравнение с приложением нечестно.
-          if [ "${{ github.event.inputs.size }}" = "576" ] && [ -f best-gold-576.pt ]; then
-            INIT=best-gold-576.pt
+          # Канонические веса действующей сборки сохранены отдельно: модель
+          # обучалась при 512, затем эти же веса экспортировали с входом 576.
+          # Именованный shipped-asset нельзя перезаписать результатом опыта.
+          if [ "${{ github.event.inputs.size }}" = "576" ] && [ -f best-gold-512-shipped.pt ]; then
+            INIT=best-gold-512-shipped.pt
           fi
           echo "Стартовые веса: $INIT"
           python finetune.py \
