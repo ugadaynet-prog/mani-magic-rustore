@@ -14,13 +14,13 @@
   }
   ui.wrap = $('canvasWrap');
   if (window.Capacitor?.isNativePlatform?.()) {
+    document.documentElement.style.setProperty('--safe-top', '28px');
     const applyInsets = async (tries = 20) => {
       const plugin = window.Capacitor.Plugins?.Insets;
-      if (!plugin?.get) return;
+      if (!plugin?.get) { if (tries > 0) setTimeout(() => applyInsets(tries - 1), 150); return; }
       try {
         const result = await plugin.get();
-        if (!result?.ready && tries > 0) { setTimeout(() => applyInsets(tries - 1), 150); return; }
-        if (!result) return;
+        if (!result?.ready) { if (tries > 0) setTimeout(() => applyInsets(tries - 1), 150); return; }
         const num = value => Math.max(0, Math.round(Number(value) || 0));
         const bottom = num(result.bottom);
         const top = num(result.top) < 8 && bottom > 0 ? 28 : num(result.top);
