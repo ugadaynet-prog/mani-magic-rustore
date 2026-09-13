@@ -98,7 +98,18 @@ jobs:
             await shot('4-filtr', 'фильтр по цвету');
             await closeAll();
 
-            // 5. Избранное — заранее положим пару карт, иначе экран пустой
+            // 5. Подбор по форме и длине — новая функция каталога
+            await page.click('#catalogBtn');
+            await page.waitForTimeout(1000);
+            await page.click('#fitBtn');
+            await page.waitForTimeout(800);
+            await page.locator('#fitForm .fit-group').nth(0).getByRole('button', { name: 'Средние', exact: true }).click();
+            await page.locator('#fitForm .fit-group').nth(1).getByRole('button', { name: 'Миндаль', exact: true }).click();
+            await page.waitForTimeout(400);
+            await shot('5-podbor-formy-dliny', 'подбор под среднюю длину и миндальную форму');
+            await closeAll();
+
+            // 6. Избранное — заранее положим пару карт, иначе экран пустой
             await page.evaluate(() => {
               // ключ ровно как в app/script.js (FAV_KEY), индексы — бесплатные карты
               localStorage.setItem('maniMagicFavorites', JSON.stringify([0, 3, 7, 10]));
@@ -107,7 +118,7 @@ jobs:
             await page.waitForTimeout(7000);
             await page.click('#favBtn');
             await page.waitForTimeout(2000);
-            await shot('5-izbrannoe', 'избранное');
+            await shot('6-izbrannoe', 'избранное');
 
             await browser.close();
             console.log('\nВСЕГО СНЯТО:', shots.length);
