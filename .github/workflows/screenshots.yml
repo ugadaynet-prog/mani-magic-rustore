@@ -12,15 +12,26 @@ on:
       url:
         description: 'Адрес приложения'
         required: false
-        default: 'https://mani-magic.ru/app/'
+        default: ''
 
 jobs:
   shots:
     runs-on: ubuntu-latest
     steps:
+      - name: Получить актуальный код приложения
+        uses: actions/checkout@v4
+        with:
+          repository: ugadaynet-prog/mani-magic
+          path: app
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+
+      - name: Запустить локальный preview приложения
+        run: |
+          npx --yes http-server app -p 4173 -c-1 >/tmp/mani-magic-preview.log 2>&1 &
+          for i in {1..20}; do curl -fsS http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done
 
       - name: Установить Playwright с Chromium
         run: |
@@ -30,7 +41,7 @@ jobs:
 
       - name: Снять скриншоты
         env:
-          APP_URL: ${{ github.event.inputs.url || 'https://mani-magic.ru/app/' }}
+          APP_URL: ${{ github.event.inputs.url || 'http://127.0.0.1:4173/' }}
         run: |
           mkdir -p shots
           cat > shot.js <<'EOF'
