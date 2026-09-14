@@ -54,10 +54,10 @@ START_TIME = time.time()
 
 # --------------------------------------------------------------------- модель
 class Encoder(nn.Module):
-    def __init__(self):
+    def __init__(self, pretrained=True):
         super().__init__()
         self.features = mobilenet_v3_small(
-            weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1).features
+            weights=MobileNet_V3_Small_Weights.IMAGENET1K_V1 if pretrained else None).features
 
     def forward(self, x):
         feats = {}
@@ -83,9 +83,9 @@ class Up(nn.Module):
 
 
 class NailNet(nn.Module):
-    def __init__(self):
+    def __init__(self, pretrained=True):
         super().__init__()
-        self.enc = Encoder()
+        self.enc = Encoder(pretrained=pretrained)
         with torch.no_grad():
             feats = self.enc(torch.zeros(1, 3, SIZE, SIZE))
         self.res = sorted(feats.keys())
@@ -259,7 +259,8 @@ class NailDataset(Dataset):
             # Для отложенных зерно привязано к номеру кадра: цвет один и тот же
             # от прогона к прогону, иначе метрику не с чем сравнивать.
             rng = (np.random.default_rng(self.dark_seed + idx)
-                   if self.dark_seed is not None else np.random.default_rng())
+                   if self.dark_seed is not None else
+                   np.random.default_rng(np.random.randint(0, 2**32, dtype=np.uint64)))
             # Три синтеза делят один жребий и потому не накладываются друг на
             # друга: кадру достаётся либо узор, либо тёмный лак, либо голые
             # ногти, либо ничего.

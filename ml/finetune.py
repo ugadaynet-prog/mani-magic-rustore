@@ -35,6 +35,7 @@ import torch.nn.functional as F
 from torch.utils.data import ConcatDataset, DataLoader
 
 import exam
+import deployment_eval as D
 import train as T
 from PIL import Image
 
@@ -72,37 +73,46 @@ def gold_split():
 
 
 def val_score(net, ids, size):
-    """Прогнать отложенные кадры ровно так, как это делает приложение.
+    """Use the same Android software-reference path as exam --pipeline android.
 
-    Не переиспользуем валидацию train.py: она считает IoU по тензорам 384×384,
-    а нам нужен тот же путь, что в exam.py и в плагине, — вписывание в квадрат,
-    возврат маски в размер фотографии и счёт по ногтям.
+    Raster parity with a physical device is not implied; see deployment_eval.
     """
     net.eval()
-    found = nails = stray = 0
-    ious = []
+    rows = []
+    part_of = {iid: part for part, group in gold_split().get('by_part', {}).items()
+               for key in ('train', 'val') for iid in group.get(key, [])}
     with torch.no_grad():
         for iid in ids:
             im = Image.open(os.path.join(GOLD, 'images', f'{iid}.jpg')).convert('RGB')
             gt = np.asarray(Image.open(os.path.join(GOLD, 'instances', f'{iid}.png')))
-            x = np.asarray(exam.letterbox(im, size), np.float32) / 255.0
-            x = torch.from_numpy(x).permute(2, 0, 1).unsqueeze(0)
+            rgb = np.asarray(D.prepare_input(im, size), np.float32) / 255.0
+            x = torch.from_numpy(rgb).permute(2, 0, 1).unsqueeze(0)
             logits = net(x)[0, 0].numpy()
-            pred = exam.unletterbox(1 / (1 + np.exp(-logits)) > 0.5, im.width, im.height)
-            r = exam.score_frame(gt, pred)
-            found += r['found']
-            nails += r['nails']
-            stray += r['stray']
-            if r['iou'] is not None:
-                ious.append(r['iou'])
-    return {'recall': found / max(1, nails), 'found': found, 'nails': nails,
-            'iou': float(np.mean(ious)) if ious else 0.0, 'stray': stray}
+            pred = D.postprocess(D.sigmoid(logits), rgb, original_size=im.size)
+            r = D.score_frame(gt, pred)
+            r.update(id=iid, part=part_of.get(iid, 'other'))
+            rows.append(r)
+    summary = D.aggregate(rows)
+    summary['parts'] = {part: D.aggregate([r for r in rows if r['part'] == part])
+                        for part in sorted({r['part'] for r in rows})}
+    return summary
+
+
+def passes_guard(candidate, base):
+    """Do not save improved recall at the expense of missing nails/skin FP."""
+    for part, before in base['parts'].items():
+        after = candidate['parts'][part]
+        if after['found'] < before['found'] or after['fp'] > before['fp']:
+            return False
+    return True
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--init', default='best.pt', help='с каких весов начинать')
     ap.add_argument('--epochs', type=int, default=60)
+    ap.add_argument('--seed', type=int, default=7)
+    ap.add_argument('--threads', type=int, default=2)
     ap.add_argument('--out', default='best-gold.pt')
     ap.add_argument('--no-auto', action='store_true',
                     help='учиться только на ручных кадрах')
@@ -116,6 +126,9 @@ def main():
                     help='вернуть в обучение часть «контроль» — чужие снимки '
                          'из открытых источников (по умолчанию не берём)')
     args = ap.parse_args()
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    torch.set_num_threads(args.threads)
 
     split = gold_split()
     size = T.SIZE
@@ -175,7 +188,7 @@ def main():
         print(f'Отложено на проверку: {len(split["val"])} кадров '
               f'({", ".join(split["val"])})', flush=True)
 
-    net = T.NailNet()
+    net = T.NailNet(pretrained=False)
     sd = torch.load(args.init, map_location='cpu', weights_only=True)
     net.load_state_dict(sd)
     print(f'Начальные веса: {args.init}', flush=True)
@@ -213,7 +226,7 @@ def main():
         # Полнота — главное, IoU лишь разводит близкие результаты.
         score = v['recall'] + 0.1 * v['iou']
         mark = ''
-        if score > best:
+        if score > best and passes_guard(v, base):
             best = score
             torch.save(net.state_dict(), args.out)
             mark = '  ← сохранено'
@@ -226,7 +239,9 @@ def main():
               f'IoU {v["iou"]:.3f}  лишних {v["stray"]:2}  '
               f'{time.time() - t0:.0f} с{mark}', flush=True)
         with open('metrics-gold.json', 'w', encoding='utf-8') as fh:
-            json.dump({'best': best, 'base': base, 'epochs': history}, fh,
+            json.dump({'best': best, 'base': base, 'epochs': history,
+                       'pipeline': 'android-software-reference', 'seed': args.seed,
+                       'selection': 'per-part found >= base and total FP <= base; recall + .1 IoU'}, fh,
                       ensure_ascii=False, indent=1)
 
     print(f'\nЛучший счёт: {best:.4f}; веса в {args.out}')

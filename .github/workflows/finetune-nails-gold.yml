@@ -3,9 +3,9 @@ name: Дообучить на ручной разметке
 # Правит готовую модель по 26 кадрам, обведённым руками (ml/finetune.py).
 #
 # Чем отличается от train-nails-clean.yml:
-#   1. Не с нуля. Начинаем с best-clean.pt — весов, из которых собрана
-#      нынешняя сборка. Они выведены только из лицензионных данных, поэтому
-#      дообучать поверх них можно.
+#   1. Не с нуля. init_checkpoint явно задаёт исходные веса; по умолчанию
+#      это подтверждённый best-gold-512-shipped.pt. Если asset отсутствует,
+#      запуск останавливается: подмена исходной модели недопустима.
 #   2. Проверка идёт по 13 отложенным ручным кадрам и считает, сколько
 #      ЭТАЛОННЫХ ногтей найдено, а не IoU против автоматических масок.
 #      Исключение — режим all_gold: там в обучение идут все 39 кадров, и
@@ -30,6 +30,10 @@ name: Дообучить на ручной разметке
 on:
   workflow_dispatch:
     inputs:
+      init_checkpoint:
+        description: 'Точное имя исходного .pt asset (без пути); отсутствие — ошибка'
+        required: true
+        default: 'best-gold-512-shipped.pt'
       epochs:
         description: 'Сколько эпох (по умолчанию 60)'
         required: false
@@ -47,7 +51,7 @@ on:
         required: false
         default: '0'
       size:
-        description: 'Сторона входа модели (384 или 512)'
+        description: 'Сторона входа модели (384, 512 или 576); исходные веса задаются отдельно'
         required: false
         default: '384'
       zoom:
@@ -80,10 +84,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 330
     permissions:
-      contents: write
+      contents: read
     env:
       REPO: ugadaynet-prog/mani-magic-rustore
       RELEASE_TAG: try-on-v2
+      INIT_CHECKPOINT: ${{ inputs.init_checkpoint }}
+      WORKFLOW_INPUTS: ${{ toJSON(inputs) }}
     defaults:
       run:
         working-directory: rustore-app/ml
@@ -95,6 +101,26 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Зафиксировать параметры эксперимента
+        run: |
+          python3 - <<'EOF'
+          import json, os, re
+          from pathlib import Path
+          name = os.environ['INIT_CHECKPOINT']
+          if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*\.pt', name):
+              raise SystemExit('init_checkpoint: ожидается безопасное имя .pt asset без пути')
+          config = dict(schema_version=1, inputs=json.loads(os.environ['WORKFLOW_INPUTS']),
+                        run_id=os.environ['GITHUB_RUN_ID'],
+                        run_attempt=os.environ['GITHUB_RUN_ATTEMPT'],
+                        git_sha=os.environ['GITHUB_SHA'], init_checkpoint=name,
+                        source_release=os.environ['RELEASE_TAG'],
+                        release_publish=False)
+          Path('run-config.json').write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
+          Path('evaluation_status.json').write_text(json.dumps(dict(
+              status='not_run', approved_for_deployment=False,
+              reason='Обучение и экспорт ещё не завершены'), ensure_ascii=False, indent=2), encoding='utf-8')
+          EOF
 
       - name: Поставить зависимости
         run: |
@@ -110,17 +136,17 @@ jobs:
           DECK_KEY: ${{ secrets.DECK_KEY }}
         run: |
           python3 - <<'EOF'
-          import json, os, urllib.request
+          import hashlib, json, os, urllib.request
+          from pathlib import Path
           tok = os.environ['GH_TOKEN']
           url = f"https://api.github.com/repos/{os.environ['REPO']}/releases/tags/{os.environ['RELEASE_TAG']}"
           req = urllib.request.Request(url, headers={'Authorization': f'token {tok}'})
           rel = json.load(urllib.request.urlopen(req))
-          want = {'deck-dataset.zip.enc', 'gold-dataset.zip.enc', 'best-clean.pt'}
-          optional = {'best-gold-512-shipped.pt'}
-          fetch = want | optional
+          checkpoint = os.environ['INIT_CHECKPOINT']
+          want = {'deck-dataset.zip.enc', 'gold-dataset.zip.enc', checkpoint}
           got = set()
           for a in rel.get('assets', []):
-              if a['name'] not in fetch:
+              if a['name'] not in want:
                   continue
               print(f"Беру {a['name']} ({a['size']/1e6:.1f} МБ)")
               r = urllib.request.Request(a['url'], headers={
@@ -132,6 +158,16 @@ jobs:
           missing = want - got
           if missing:
               raise SystemExit(f'В релизе нет: {", ".join(sorted(missing))}')
+          with open(checkpoint, 'rb') as src:
+              digest = hashlib.file_digest(src, 'sha256').hexdigest()
+          print(f'Исходные веса: {checkpoint}; SHA-256: {digest}')
+          shipped_sha256 = '9d310b081061580b448c432df0dd91ef7b97ae832f313891efed7ec568d25c14'
+          if checkpoint == 'best-gold-512-shipped.pt' and digest != shipped_sha256:
+              raise SystemExit('SHA-256 канонического shipped-checkpoint не совпадает; обучение запрещено')
+          config_path = Path('run-config.json')
+          config = json.loads(config_path.read_text(encoding='utf-8'))
+          config['init_sha256'] = digest
+          config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
           EOF
 
           if [ -z "$DECK_KEY" ]; then
@@ -197,23 +233,23 @@ jobs:
           ZOOM_P: ${{ github.event.inputs.zoom }}
           TEXTURE_P: ${{ github.event.inputs.texture }}
           NUDE_P: ${{ github.event.inputs.nude }}
+          EPOCHS: ${{ inputs.epochs }}
+          SAVE_AT: ${{ inputs.save_at }}
+          GOLD_ONLY: ${{ inputs.gold_only }}
+          ALL_GOLD: ${{ inputs.all_gold }}
+          WITH_CONTROL: ${{ inputs.with_control }}
         run: |
-          INIT=best-clean.pt
-          # Канонические веса действующей сборки сохранены отдельно: модель
-          # обучалась при 512, затем эти же веса экспортировали с входом 576.
-          # Именованный shipped-asset нельзя перезаписать результатом опыта.
-          if [ "${{ github.event.inputs.size }}" = "576" ] && [ -f best-gold-512-shipped.pt ]; then
-            INIT=best-gold-512-shipped.pt
-          fi
-          echo "Стартовые веса: $INIT"
+          test -f "$INIT_CHECKPOINT"
+          echo "Стартовые веса: $INIT_CHECKPOINT"
+          FLAGS=()
+          if [ "$GOLD_ONLY" = "yes" ]; then FLAGS+=(--no-auto); fi
+          if [ "$ALL_GOLD" = "yes" ]; then FLAGS+=(--all-gold); fi
+          if [ "$WITH_CONTROL" = "yes" ]; then FLAGS+=(--with-control); fi
           python finetune.py \
-            --init "$INIT" \
-            --epochs "${{ github.event.inputs.epochs }}" \
+            --init "$INIT_CHECKPOINT" \
+            --epochs "$EPOCHS" \
             --out best-gold.pt \
-            --save-at "${{ github.event.inputs.save_at }}" \
-            ${{ github.event.inputs.gold_only == 'yes' && '--no-auto' || '' }} \
-            ${{ github.event.inputs.all_gold == 'yes' && '--all-gold' || '' }} \
-            ${{ github.event.inputs.with_control == 'yes' && '--with-control' || '' }}
+            --save-at "$SAVE_AT" "${FLAGS[@]}"
 
       # export.py читает best.pt — подставляем дообученные веса под этим именем.
       # При all_gold «лучшая» эпоха выбиралась бы по кадрам, которые модель
@@ -222,88 +258,84 @@ jobs:
       - name: Экспорт в ONNX
         env:
           SIZE: ${{ github.event.inputs.size }}
+          SAVE_AT: ${{ inputs.save_at }}
+          ALL_GOLD: ${{ inputs.all_gold }}
         run: |
           SRC=best-gold.pt
-          E="best-gold-e${{ github.event.inputs.save_at }}.pt"
-          if [ "${{ github.event.inputs.all_gold }}" = "yes" ] && [ -f "$E" ]; then
+          E="best-gold-e${SAVE_AT}.pt"
+          if [ "$ALL_GOLD" = "yes" ]; then
+            test -f "$E" || { echo "::error::Для all_gold необходим сохранённый checkpoint эпохи save_at: $E"; exit 1; }
             SRC="$E"
           fi
           echo "Экспортирую $SRC"
+          export EXPORT_CHECKPOINT="$SRC"
+          python3 - <<'EOF'
+          import hashlib, json, os
+          from pathlib import Path
+          path = Path('run-config.json')
+          config = json.loads(path.read_text(encoding='utf-8'))
+          config['export_checkpoint'] = os.environ['EXPORT_CHECKPOINT']
+          with open(config['export_checkpoint'], 'rb') as src:
+              config['export_checkpoint_sha256'] = hashlib.file_digest(src, 'sha256').hexdigest()
+          path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
+          EOF
           cp "$SRC" best.pt
           python export.py
           mv nail-unet.onnx nail-unet-gold.onnx
 
-      - name: Замер по всей ручной разметке
-        run: python exam.py --model nail-unet-gold.onnx || true
-        continue-on-error: true
-
-      - name: Сохранить результат в Release
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Фото пяти экзаменов намеренно не публикуются в Git. Отсутствие фото
+      # отмечается как unavailable, а не как успешная проверка. Ошибка при
+      # наличии полного набора делает шаг красным; артефакт всё равно сохраним.
+      - name: Проверить доступность и выполнить пять экзаменов
         run: |
-          RELEASE_ID=$(curl -s -H "Authorization: token $GH_TOKEN" \
-            "https://api.github.com/repos/$REPO/releases/tags/$RELEASE_TAG" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-
-          upload_asset() {
-            local file="$1" name="$2"
-            [ -f "$file" ] || { echo "  $file нет, пропускаю"; return 0; }
-            OLD_ID=$(curl -s -H "Authorization: token $GH_TOKEN" \
-              "https://api.github.com/repos/$REPO/releases/$RELEASE_ID/assets" \
-              | python3 -c "
-          import sys,json
-          for a in json.load(sys.stdin):
-              if a['name']=='$name':
-                  print(a['id']); break
-          ")
-            [ -n "$OLD_ID" ] && curl -s -X DELETE -H "Authorization: token $GH_TOKEN" \
-              "https://api.github.com/repos/$REPO/releases/assets/$OLD_ID" >/dev/null
-            CODE=$(curl -s -o /tmp/up.json -w "%{http_code}" -X POST \
-              -H "Authorization: token $GH_TOKEN" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"$file" \
-              "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=$name")
-            if [ "$CODE" = "201" ]; then echo "  $name готово"; else echo "  $name — ошибка HTTP $CODE"; cat /tmp/up.json; fi
-          }
-
-          # Суффикс описывает рецепт, а не только разрешение. 8 сентября
-          # прогон с узором записался поверх прогона без узора под тем же
-          # именем best-gold-512.pt, и веса действующей сборки нашлись только
-          # в артефакте рабочего процесса. Имя обязано отличаться везде, где
-          # отличается рецепт.
-          SUF=""
-          [ "${{ github.event.inputs.size }}" != "384" ] && SUF="-${{ github.event.inputs.size }}"
-          case "${{ github.event.inputs.zoom }}" in
-            ""|0|0.0) ;;
-            *) SUF="$SUF-zoom${{ github.event.inputs.zoom }}" ;;
-          esac
-          case "${{ github.event.inputs.texture }}" in
-            ""|0|0.0) ;;
-            *) SUF="$SUF-tex${{ github.event.inputs.texture }}" ;;
-          esac
-          case "${{ github.event.inputs.nude }}" in
-            ""|0|0.0) ;;
-            *) SUF="$SUF-nude${{ github.event.inputs.nude }}" ;;
-          esac
-          [ "${{ github.event.inputs.cc0 }}" = "yes" ] && SUF="$SUF-cc0"
-          [ "${{ github.event.inputs.own }}" = "yes" ] && SUF="$SUF-own"
-          [ "${{ github.event.inputs.with_control }}" = "yes" ] && SUF="$SUF-ctl"
-          [ "${{ github.event.inputs.all_gold }}" = "yes" ] && SUF="$SUF-all"
-          echo "Суффикс результатов: '$SUF'"
-          upload_asset "best-gold.pt" "best-gold$SUF.pt"
-          for f in best-gold-e*.pt; do upload_asset "$f" "$f"; done
-          upload_asset "metrics-gold.json" "metrics-gold$SUF.json"
-          upload_asset "nail-unet-gold.onnx" "nail-unet-gold$SUF.onnx"
+          python3 - <<'EOF'
+          import json, os, subprocess, sys
+          from pathlib import Path
+          status_path = Path('evaluation_status.json')
+          status = dict(status='running', pipeline='android',
+                        approved_for_deployment=False,
+                        required_slices=['контроль', 'подборка', 'студия', 'без лака', 'свои'])
+          try:
+              import benchmark
+              try:
+                  manifest, dataset_sha = benchmark.dataset_manifest()
+              except FileNotFoundError as exc:
+                  status.update(status='unavailable', reason=f'Нет полного приватного набора: {exc}')
+                  print('::warning::Пять экзаменов недоступны. Кандидат требует полной локальной проверки.')
+              else:
+                  status['dataset_sha256'] = dataset_sha
+                  status['frames'] = len(manifest)
+                  subprocess.run([sys.executable, 'benchmark.py', '--model', 'nail-unet-gold.onnx',
+                                  '--out', 'benchmark-result', '--pipeline', 'android', '--threads', '2'],
+                                 check=True)
+                  report = json.loads(Path('benchmark-result/benchmark.json').read_text(encoding='utf-8'))
+                  if report.get('complete') is not True:
+                      raise RuntimeError('benchmark.py не подтвердил завершение всех пяти экзаменов')
+                  status.update(status='completed', model_sha256=report['models'][0]['sha256'],
+                                reason='Замер завершён; принятие требует сравнения с рабочей моделью')
+          except Exception as exc:
+              status.update(status='failed', reason=f'{type(exc).__name__}: {exc}')
+              raise
+          finally:
+              status_path.write_text(json.dumps(status, ensure_ascii=False, indent=2), encoding='utf-8')
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as summary:
+                  summary.write(f'### Проверка модели: {status["status"]}\n\n')
+                  summary.write(status.get('reason', '') + '\n\n')
+                  summary.write('Экспериментальный артефакт. Автоматическая публикация в Release отключена.\n')
+          EOF
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: nail-model-gold
+          name: nail-model-gold-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             rustore-app/ml/nail-unet-gold.onnx
             rustore-app/ml/best-gold.pt
             rustore-app/ml/best-gold-e*.pt
             rustore-app/ml/metrics-gold.json
             rustore-app/ml/dataset_gold/split.json
+            rustore-app/ml/run-config.json
+            rustore-app/ml/evaluation_status.json
+            rustore-app/ml/benchmark-result/benchmark.json
+            rustore-app/ml/benchmark-result/comparison.md
           if-no-files-found: warn

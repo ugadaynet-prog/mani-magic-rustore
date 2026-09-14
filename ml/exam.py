@@ -26,6 +26,8 @@
 import argparse
 import json
 import os
+import hashlib
+import time
 
 import cv2
 import numpy as np
@@ -34,6 +36,7 @@ from PIL import Image
 
 import clean_masks
 import synth
+import deployment_eval
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Задание по умолчанию. Другое выбирается ключом --work.
@@ -79,44 +82,8 @@ def run_model(sess, im, size):
 
 
 def score_frame(gt_idx, pred):
-    """Сравнить предсказание с эталоном одного кадра.
-
-    Считаем по ногтям, а не по пикселям: пользователь видит не IoU, а то,
-    покрашен ли конкретный ноготь.
-    """
-    ids = [int(v) for v in np.unique(gt_idx) if v]
-    found, ious = 0, []
-    # Форму запоминаем по каждому ногтю отдельно. Средняя по кадру обманывает
-    # при сравнении моделей: та, что нашла лишний трудный ноготь, получает его
-    # плохой контур в свой средний IoU, а та, что его пропустила, — нет. Тогда
-    # более полная модель выглядит хуже по форме, хотя проиграла не формой.
-    per_nail = {}
-    for v in ids:
-        nail = gt_idx == v
-        cover = float((nail & pred).sum()) / float(nail.sum())
-        if cover >= FOUND_MIN:
-            found += 1
-            union = (nail | pred_component_of(pred, nail)).sum()
-            iou = float((nail & pred).sum()) / float(union) if union else 0.0
-            ious.append(iou)
-            per_nail[str(v)] = round(iou, 3)
-        else:
-            per_nail[str(v)] = None
-
-    # Лишнее — связные куски предсказания, не задевшие ни одного эталона.
-    n, lab, stats, _ = cv2.connectedComponentsWithStats(pred.astype(np.uint8), 8)
-    stray, stray_px = 0, 0
-    for i in range(1, n):
-        area = int(stats[i, cv2.CC_STAT_AREA])
-        if area < MIN_BLOB:
-            continue
-        if not (gt_idx[lab == i] > 0).any():
-            stray += 1
-            stray_px += area
-    return {'nails': len(ids), 'found': found,
-            'iou': round(float(np.mean(ious)), 3) if ious else None,
-            'per_nail': per_nail,
-            'stray': stray, 'stray_px': stray_px}
+    """Historical nail metrics plus ALL false-painted pixels and boundaries."""
+    return deployment_eval.score_frame(gt_idx, pred)
 
 
 def pred_component_of(pred, nail):
@@ -143,6 +110,74 @@ def preview(rgb, gt_idx, pred, path):
     Image.fromarray(out).save(path, quality=90)
 
 
+def evaluate_model(model_path, work, pipeline='legacy', raw=False,
+                   preview_dir=None, threads=2):
+    """Evaluate one model without modifying the historical exam directory.
+
+    android is an explicitly labelled software reference of the native/JS
+    mask pipeline. PIL/Skia raster equivalence still requires device checking.
+    legacy preserves the old input resize, threshold and Python clean filter.
+    """
+    if pipeline not in ('legacy', 'android'):
+        raise ValueError(f'Unknown pipeline: {pipeline}')
+    if pipeline == 'android' and raw:
+        raise ValueError('--raw cannot be combined with --pipeline android')
+    work = work if os.path.isabs(work) else os.path.join(HERE, work)
+    with open(os.path.join(work, 'task.json'), encoding='utf-8') as fh:
+        items = json.load(fh)['items']
+    ready = [t for t in items if os.path.isfile(os.path.join(
+        work, 'instances', f'{t["id"]}.png'))]
+    if not ready:
+        raise ValueError(f'No annotated images: {work}')
+    for t in ready:
+        path = os.path.join(work, 'photos', t['file'])
+        if not os.path.isfile(path):
+            raise FileNotFoundError(path)
+    opts = ort.SessionOptions()
+    opts.intra_op_num_threads = threads
+    opts.inter_op_num_threads = 1
+    sess = ort.InferenceSession(str(model_path), sess_options=opts,
+                                providers=['CPUExecutionProvider'])
+    size = sess.get_inputs()[0].shape[2]
+    if not isinstance(size, int):
+        raise ValueError('Evaluation requires an explicit fixed model input size')
+    if preview_dir:
+        os.makedirs(preview_dir, exist_ok=True)
+    rows = []
+    started = time.perf_counter()
+    for t in ready:
+        im = Image.open(os.path.join(work, 'photos', t['file'])).convert('RGB')
+        rgb = np.asarray(im)
+        gt = np.asarray(Image.open(os.path.join(work, 'instances', f'{t["id"]}.png')))
+        if gt.shape != rgb.shape[:2]:
+            raise ValueError(f'Annotation/image shape mismatch: {work}/{t["id"]}')
+        if pipeline == 'android':
+            square = deployment_eval.prepare_input(im, size)
+            input_rgb = np.asarray(square, dtype=np.float32) / 255.0
+            x = input_rgb.transpose(2, 0, 1)[None]
+            logits = sess.run(None, {sess.get_inputs()[0].name: x})[0][0, 0]
+            pred = deployment_eval.postprocess(deployment_eval.sigmoid(logits),
+                                               input_rgb, original_size=im.size)
+        else:
+            pred = run_model(sess, im, size)
+            if not raw:
+                pred = clean_masks.clean(rgb, pred.astype(np.uint8))[0].astype(bool)
+        r = score_frame(gt, pred)
+        r.update(id=t['id'], part=t['part'], file=t['file'])
+        if 'group' in t:
+            r['group'] = t['group']
+        rows.append(r)
+        if preview_dir:
+            preview(rgb, gt, pred, os.path.join(preview_dir, f'{t["id"]}.jpg'))
+    with open(model_path, 'rb') as fh:
+        digest = hashlib.file_digest(fh, 'sha256').hexdigest()
+    return rows, {'sha256': digest, 'input_size': size, 'pipeline': pipeline,
+                  'annotated_frames': len(ready), 'task_frames': len(items),
+                  'elapsed_seconds': round(time.perf_counter() - started, 3),
+                  'raster_caveat': ('PIL software reference; Android/Skia pixel parity '
+                                    'not yet verified') if pipeline == 'android' else None}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--model', nargs='+', required=True)
@@ -152,6 +187,9 @@ def main():
                     help='папка задания: labels — основной эталон, '
                          'labels3 — ногти без лака')
     ap.add_argument('--out', default=None)
+    ap.add_argument('--pipeline', choices=['legacy', 'android'], default='legacy')
+    ap.add_argument('--no-previews', action='store_true')
+    ap.add_argument('--threads', type=int, default=2)
     args = ap.parse_args()
 
     # Заданий несколько, и каждое меряет свою жалобу: labels — общий эталон,
@@ -172,29 +210,15 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     report = {}
+    metadata = {}
     for mp in args.model:
-        sess = ort.InferenceSession(mp, providers=['CPUExecutionProvider'])
-        size = sess.get_inputs()[0].shape[2]
-        if not isinstance(size, int):
-            size = 384
         name = os.path.splitext(os.path.basename(mp))[0]
+        if name in report:
+            raise ValueError(f'Duplicate model basename: {name}')
         sub = os.path.join(args.out, name)
-        os.makedirs(sub, exist_ok=True)
-
-        rows = []
-        for t in ready:
-            im = Image.open(os.path.join(work, 'photos', t['file'])).convert('RGB')
-            rgb = np.asarray(im)
-            gt_idx = np.asarray(Image.open(
-                os.path.join(work, 'instances', f'{t["id"]}.png')))
-            pred = run_model(sess, im, size)
-            if not args.raw:
-                pred = clean_masks.clean(rgb, pred.astype(np.uint8))[0].astype(bool)
-            r = score_frame(gt_idx, pred)
-            r.update(id=t['id'], part=t['part'], file=t['file'])
-            rows.append(r)
-            preview(rgb, gt_idx, pred, os.path.join(sub, f'{t["id"]}.jpg'))
-
+        rows, metadata[name] = evaluate_model(mp, work, args.pipeline, args.raw,
+                                             None if args.no_previews else sub,
+                                             args.threads)
         report[name] = rows
         print(f'══ {name}{"  (без постфильтра)" if args.raw else ""}')
         # Перебираем те части, что реально размечены, а не жёсткий список:
@@ -220,10 +244,12 @@ def main():
         worst = sorted(rows, key=lambda r: r['found'] / max(1, r['nails']))[:5]
         print('  хуже всего: ' + ', '.join(
             f'{r["id"]} ({r["found"]}/{r["nails"]})' for r in worst))
-        print(f'  покраска с контуром эталона: {os.path.relpath(sub, HERE)}\n')
+        if not args.no_previews:
+            print(f'  покраска с контуром эталона: {os.path.relpath(sub, HERE)}\n')
 
     with open(os.path.join(args.out, 'exam.json'), 'w', encoding='utf-8') as fh:
-        json.dump({'found_min': FOUND_MIN, 'raw': args.raw, 'models': report},
+        json.dump({'found_min': FOUND_MIN, 'raw': args.raw, 'pipeline': args.pipeline,
+                   'metadata': metadata, 'models': report},
                   fh, ensure_ascii=False, indent=1)
 
 
