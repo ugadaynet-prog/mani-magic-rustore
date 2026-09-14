@@ -122,7 +122,13 @@ jobs:
               groups[0]?.querySelectorAll('.fit-option')[2]?.click();
               groups[1]?.querySelectorAll('.fit-option')[4]?.click();
             });
-            await page.waitForTimeout(400);
+            await page.click('#fitApply');
+            await page.waitForFunction(
+              () => document.getElementById('catalogTitle')?.textContent.includes('Подборка')
+                && document.getElementById('catalogResultNote')?.textContent.includes('дизайнов'),
+              { timeout: 10000 }
+            );
+            await page.waitForTimeout(1200);
             await shot('5-podbor-formy-dliny', 'подбор под среднюю длину и миндальную форму');
             await closeAll();
 
