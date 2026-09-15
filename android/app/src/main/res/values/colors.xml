@@ -3,4 +3,6 @@
     <!-- Совпадает с фоном тёмной темы в app/style.css: полосы отступов под
          статус-баром и навигацией не должны отличаться от фона страницы. -->
     <color name="appBackground">#0d0d10</color>
+    <color name="splashBackground">#1B0C22</color>
+    <color name="splashLogoTint">#F5F2F8</color>
 </resources>
