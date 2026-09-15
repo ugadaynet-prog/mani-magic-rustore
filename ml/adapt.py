@@ -120,6 +120,7 @@ def audit_samples(train_sources, val_domains):
 
 def load_sources(args):
     auto_dir, gold_dir, own_dir = map(Path, (args.auto_dir, args.gold_dir, args.own_dir))
+    review_dir = Path(args.own_review_dir).resolve() if args.own_review_dir else None
     # Explicitly reject accidentally passing the named release exams as a source.
     forbidden = {'labels', 'labels3', 'labels8'}
     for path in (auto_dir, gold_dir, own_dir):
@@ -155,13 +156,35 @@ def load_sources(args):
     for row in read_json(own_dir / 'task.json')['items']:
         if not row.get('group') or row.get('part') != 'свои':
             raise ValueError('Each own image must have a shooting group and part=свои')
+        iid = row['id']
+        source_mask = own_dir / 'masks' / f'{iid}.png'
+        source_instances = own_dir / 'instances' / f'{iid}.png'
+        if review_dir:
+            reviewed_mask = review_dir / 'masks' / f'{iid}.png'
+            reviewed_instances = review_dir / 'instances' / f'{iid}.png'
+            reviewed_meta = review_dir / 'meta' / f'{iid}.json'
+            exists = (reviewed_mask.is_file(), reviewed_instances.is_file(), reviewed_meta.is_file())
+            if any(exists) and not all(exists):
+                raise ValueError(f'Incomplete reviewed annotation for own/{iid}')
+            if all(exists):
+                source_mask, source_instances = reviewed_mask, reviewed_instances
         own.append(Sample(row['id'], 'own', row['group'],
                           str(own_dir / 'photos' / row['file']),
-                          str(own_dir / 'masks' / f'{row["id"]}.png'),
-                          str(own_dir / 'instances' / f'{row["id"]}.png'), 'свои'))
+                          str(source_mask), str(source_instances), 'свои'))
     if len({s.id for s in own}) != len(own):
         raise ValueError('Duplicate own IDs')
     own_train, own_val = own_group_split(own, args.own_val_frac, args.seed)
+    if review_dir:
+        task_manifest = review_dir / 'task-manifest.json'
+        if task_manifest.is_file():
+            reviewed_ids = {str(x['id']) for x in read_json(task_manifest).get('items', [])}
+            train_ids = {s.id for s in own_train}
+            if not reviewed_ids <= train_ids:
+                raise ValueError('Review task contains own validation or unknown IDs')
+            expected = set(reviewed_ids)
+            actual = {s.id for s in own_train if Path(s.instances).parent == review_dir / 'instances'}
+            if actual != expected:
+                raise ValueError(f'Review annotations incomplete: expected {len(expected)}, found {len(actual)}')
     sources = {'auto': auto, 'gold': gold_train, 'own': own_train}
     if any(not s for s in sources.values()):
         raise ValueError('All three training sources must be nonempty')
@@ -299,6 +322,8 @@ def main(argv=None):
     ap.add_argument('--auto-dir', type=Path, default=HERE / 'dataset_merged')
     ap.add_argument('--gold-dir', type=Path, default=HERE / 'dataset_gold')
     ap.add_argument('--own-dir', type=Path, default=HERE / 'own-train')
+    ap.add_argument('--own-review-dir', type=Path, default=None,
+                    help='directory saved by annotation_review.py; only train-fold own masks are used')
     ap.add_argument('--dry-run', action='store_true', help='audit and write immutable manifest only')
     args = ap.parse_args(argv)
     for field in ('epochs', 'steps_per_epoch', 'batch_size', 'threads'):
