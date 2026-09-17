@@ -2,6 +2,7 @@ package app.manimagic.rustore
 
 import android.content.Intent
 import android.os.Bundle
+import androidx.activity.OnBackPressedCallback
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import com.getcapacitor.BridgeActivity
@@ -28,6 +29,24 @@ class MainActivity : BridgeActivity() {
         bridge?.webView?.setBackgroundColor(
             ContextCompat.getColor(this, R.color.appBackground)
         )
+
+        // Системная «Назад» шагает по истории страницы: закрывает окна колоды и
+        // кабинета, возвращает с вкладки кабинета, из кабинета — в колоду. Сам
+        // Capacitor кнопку странице не передаёт (плагина @capacitor/app в сборке
+        // нет), и до 1.9.14 она закрывала приложение с любого экрана. Истории нет —
+        // отдаём нажатие системе, как обычно: приложение уходит в фон.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                val webView = bridge?.webView
+                if (webView != null && webView.canGoBack()) {
+                    webView.goBack()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
 
         // Холодный старт по возврату из банковского приложения (SBP/SberPay) —
         // отдельно от onNewIntent, иначе теряется, если систем убила активность.
