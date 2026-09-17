@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- Баклажановый фон монограммы (AUBERGINE в tools/brand/logo-aubergine.py).
+         Раньше здесь был белый: адаптивная иконка (Android 8+) собирает
+         background+foreground отдельными слоями, а прежний foreground был
+         непрозрачным PNG со своим белым фоном внутри и полностью перекрывал
+         этот слой. Новый foreground — прозрачный, только сама монограмма,
+         поэтому цвет фона теперь виден и обязан быть баклажановым, а не белым:
+         иначе слоновая кость на белом стала бы почти нечитаемой. -->
+    <color name="ic_launcher_background">#1F1020</color>
 </resources>
