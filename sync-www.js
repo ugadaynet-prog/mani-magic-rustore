@@ -7,33 +7,34 @@ const path = require('path');
 
 const SRC = path.join(__dirname, '..', 'app');
 const DEST = path.join(__dirname, 'www');
-// Нативные экраны и тяжёлые локальные ресурсы живут в этом репозитории, а не
-// на сайте. После синхронизации добавляем их поверх общей веб-части.
+// Нативные экраны и Android-модель живут в этом репозитории. После синхронизации
+// добавляем их поверх общей веб-части; браузерный адаптер остаётся в ../app.
 const ADDONS = path.join(__dirname, 'app-addons');
 
 // Локальные dev-файлы, ненужные внутри упакованного приложения.
 // .git — важно: app/ сам по себе отдельный git-репозиторий (боевой сайт на GitHub
 // Pages), его историю никак нельзя утащить внутрь Android-сборки.
 const EXCLUDE = new Set(['Open-MANI-Magic-RU.bat', 'server.js', 'server.log', 'sw.js', '.git', '.gitignore']);
+const SOURCE_EXCLUDE = new Set([...EXCLUDE, 'tryon', 'vendor']);
 
 fs.rmSync(DEST, { recursive: true, force: true });
 fs.mkdirSync(DEST, { recursive: true });
 
-function copyDir(src, dest) {
+function copyDir(src, dest, exclude = EXCLUDE) {
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (EXCLUDE.has(entry.name)) continue;
+    if (exclude.has(entry.name)) continue;
     const s = path.join(src, entry.name);
     const d = path.join(dest, entry.name);
     if (entry.isDirectory()) {
       fs.mkdirSync(d, { recursive: true });
-      copyDir(s, d);
+      copyDir(s, d, exclude);
     } else {
       fs.copyFileSync(s, d);
     }
   }
 }
-copyDir(SRC, DEST);
-if (fs.existsSync(ADDONS)) copyDir(ADDONS, DEST);
+copyDir(SRC, DEST, SOURCE_EXCLUDE);
+if (fs.existsSync(ADDONS)) copyDir(ADDONS, DEST, EXCLUDE);
 
 // ONNX Runtime Web больше не нужен: распознавание ногтей теперь выполняет
 // нативный Capacitor-плагин NailSegmentation (Kotlin + onnxruntime-android),
@@ -55,16 +56,18 @@ fs.copyFileSync(MODEL_SRC, path.join(MODEL_DEST_DIR, 'nail-unet.onnx'));
 console.log('Модель скопирована в android assets/models: ' +
   (fs.statSync(MODEL_SRC).size / 1e6).toFixed(1) + ' МБ');
 
-// Вход в примерку есть только в Android-сборке: сайт остаётся лёгким и не
-// скачивает ONNX Runtime с моделью. Добавляем пункт первым в меню «Ещё».
+// Android-сборка получает пункт меню вместе с нативным дополнением. Веб-версия
+// уже содержит тот же пункт и свой ONNX Runtime-адаптер.
 const indexPath = path.join(DEST, 'index.html');
 let index = fs.readFileSync(indexPath, 'utf8');
 const moreTitle = '<h3 class="more-title">Ещё</h3>';
 if (!index.includes(moreTitle)) throw new Error('Не найдено меню «Ещё» в index.html');
-index = index.replace(
-  moreTitle,
-  moreTitle + '\n\n      <a id="tryOnItem" class="more-item tryon-menu-item" href="tryon/index.html">✦ Примерить цвет на фото</a>'
-);
+if (!index.includes('id="tryOnItem"')) {
+  index = index.replace(
+    moreTitle,
+    moreTitle + '\n\n      <a id="tryOnItem" class="more-item tryon-menu-item" href="tryon/index.html">✦ Примерить цвет на фото</a>'
+  );
+}
 fs.writeFileSync(indexPath, index, 'utf8');
 
 // Нативная сборка всегда указывает на боевой сервер — это не веб-сайт, где

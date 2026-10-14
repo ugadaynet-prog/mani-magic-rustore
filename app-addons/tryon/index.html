@@ -63,7 +63,7 @@
 </nav>
 <script src="../lucide.min.js"></script>
 <script src="../data.js"></script>
-<script>document.getElementById('startPhoto').src=CARDS[0].works[0];window.lucide?.createIcons();</script>
+<script>document.getElementById('startPhoto').src=new URL('../'+CARDS[0].works[0],location.href).href;window.lucide?.createIcons();</script>
 <script src="nail-seg-plugin.js"></script>
 <script src="tryon.js"></script>
 </body>
