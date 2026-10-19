@@ -9,6 +9,11 @@ name: Build signed AAB for RuStore
 
 on:
   workflow_dispatch:
+    inputs:
+      app_ref:
+        description: 'Pinned commit of ugadaynet-prog/mani-magic for this build'
+        required: false
+        default: 'master'
   push:
     branches: [master]
     # Обучение модели (ml/) к сборке приложения отношения не имеет: в .aab
@@ -38,6 +43,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ugadaynet-prog/mani-magic
+          ref: ${{ inputs.app_ref || 'master' }}
           path: app
 
       - name: Set up JDK 21
