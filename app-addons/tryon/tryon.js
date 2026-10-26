@@ -84,8 +84,11 @@
     toast.timer = setTimeout(() => ui.toast.classList.add('hidden'), 2400);
   }
   function setStatus(el, text, kind=''){ el.textContent=text; el.className='status '+kind; }
-  function selectedColor(hex){ ui.color.value=hex; ui.code.textContent=colorNames[colors.indexOf(hex.toUpperCase())] || 'Свой цвет'; ui.code.title=hex.toUpperCase(); document.querySelectorAll('.swatch').forEach(x=>{const active=x.dataset.color.toLowerCase()===hex.toLowerCase(); x.classList.toggle('active',active); x.setAttribute('aria-pressed',String(active));}); compare(false); }
-  colors.forEach((color,i)=>{ const b=document.createElement('button'); b.type='button'; b.className='swatch'+(i===3?' active':''); b.style.background=color; b.dataset.color=color; b.setAttribute('aria-label',colorNames[i]); b.title=colorNames[i]; b.setAttribute('aria-pressed',String(i===3)); b.onclick=()=>selectedColor(color); ui.palette.appendChild(b); });
+  function selectedColor(hex, label){ ui.color.value=hex; ui.code.textContent=label || colorNames[colors.indexOf(hex.toUpperCase())] || 'Свой цвет'; ui.code.title=hex.toUpperCase(); document.querySelectorAll('.swatch').forEach(x=>{const active=x.dataset.color.toLowerCase()===hex.toLowerCase(); x.classList.toggle('active',active); x.setAttribute('aria-pressed',String(active));}); compare(false); }
+  // Базовые цвета и палитры брендов-партнёров (../brands.js, данные в ../palettes.js).
+  // Без brands.js остаются только базовые цвета, как раньше.
+  if (window.ManiBrands) ManiBrands.mountTryon({ palette:ui.palette, base:colors.map((hex,i)=>({hex,label:colorNames[i]})), baseActive:3, onPick:selectedColor });
+  else colors.forEach((color,i)=>{ const b=document.createElement('button'); b.type='button'; b.className='swatch'+(i===3?' active':''); b.style.background=color; b.dataset.color=color; b.setAttribute('aria-label',colorNames[i]); b.title=colorNames[i]; b.setAttribute('aria-pressed',String(i===3)); b.onclick=()=>selectedColor(color); ui.palette.appendChild(b); });
 
   // Проверяем доступность нативного плагина при загрузке экрана.
   function checkNativePlugin(){
