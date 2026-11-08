@@ -4,6 +4,15 @@
   const ui = { start:$('startCard'), editor:$('editor'), camera:$('cameraInput'), gallery:$('galleryInput'), model:$('modelStatus'), canvas:$('resultCanvas'), busy:$('busy'), color:$('colorInput'), code:$('colorCode'), opacity:$('opacity'), opacityValue:$('opacityValue'), status:$('editorStatus'), toast:$('toast'), compare:$('compareBtn'), palette:$('palette'), newPhoto:$('newPhotoBtn'), share:$('shareBtn'), save:$('saveBtn'), undo:$('undoBtn') };
   const colors = ['#F5D0C5','#D98A91','#F04479','#D81B60','#A81748','#8B2F67','#7446B8','#335CC7','#1597A5','#3BAA70','#D6A522','#17171B'];
   const colorNames = ['Нежно-розовый','Пыльная роза','Ярко-розовый','Малиновый','Вишнёвый','Сливовый','Фиолетовый','Синий','Бирюзовый','Зелёный','Золотистый','Графитовый'];
+  const finishButtons = [...document.querySelectorAll('#finishPicker button')];
+  // Покрытие регулирует плотность цвета, рельеф и блик независимо от маски.
+  const finishes = {
+    glossy: { cover:1, shade:1, chroma:1, shine:.54 },
+    matte:  { cover:1, shade:.33, chroma:1, shine:0 },
+    jelly:  { cover:.72, shade:1.06, chroma:1.12, shine:.78 },
+    sheer:  { cover:.42, shade:.75, chroma:1, shine:0 },
+  };
+  let finish = 'glossy';
   let eraseMode = false;
   function compare(original) {
     showingOriginal = original;
@@ -176,7 +185,7 @@
         probabilities = null;
         render();
         setStatus(ui.status, 'Просмотр фото. Примерка оттенков доступна в Android-приложении.', '');
-        [ui.color, ui.opacity, ui.compare, $('afterBtn'), $('eraseBtn'), ui.save, ui.share, ...ui.palette.querySelectorAll('button')].forEach(button => button.disabled = true);
+        [ui.color, ui.opacity, ui.compare, $('afterBtn'), $('eraseBtn'), ui.save, ui.share, ...finishButtons, ...ui.palette.querySelectorAll('button')].forEach(button => button.disabled = true);
       }
     } catch(e){ console.error(e); setStatus(ui.model,'Не удалось открыть фото: '+e.message,'error'); }
   }
@@ -739,7 +748,13 @@
   function render(){
     fitCanvas();
     if(!sourceImage)return; const w=sourceImage.width,h=sourceImage.height;ui.canvas.width=w;ui.canvas.height=h;const out=ui.canvas.getContext('2d');out.drawImage(sourceImage,0,0);
-    if(showingOriginal||!probabilities)return; const {m,src,X0,X1,Y0,Y1}=maskData(),{level,lo,hi}=maskLevel(),dst=out.createImageData(w,h),hex=ui.color.value,r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5),16),targetLum=.299*r+.587*g+.114*b,alpha=+ui.opacity.value/100,debug=false;
+    const coating=finishes[finish], alpha=+ui.opacity.value/100*coating.cover;
+    if(showingOriginal||!probabilities||!alpha)return;
+    const {m,src,X0,X1,Y0,Y1}=maskData(),{level,lo,hi}=maskLevel(),dst=out.createImageData(w,h);
+    const hex=ui.color.value,r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5),16);
+    const targetLum=.299*r+.587*g+.114*b;
+    const tint=c=>Math.max(0,Math.min(255,targetLum+(c-targetLum)*coating.chroma));
+    const tr=tint(r),tg=tint(g),tb=tint(b);
     // Средняя яркость САМИХ ногтей. Раньше блик и тень считались от яркости
     // выбранной краски: на светлом ногте отношение упиралось в потолок 1.65,
     // и малиновый #A81748 выходил ярко-розовым #FF3988 — человек нажимал
@@ -753,13 +768,31 @@
     // подмешан фон. Светлый фон высветлял там краску, и ноготь обводился
     // ярким ободком, поэтому у края яркость краски только приглушается.
     // Блики внутри ногтя остаются: там маска полная.
-    dst.data.set(src.data); for(let y=Y0;y<Y1;y++)for(let i=y*w+X0;i<y*w+X1;i++){const p=m[i]/255,a=Math.min(1,Math.max(0,(p-lo)/(hi-lo)))*alpha;if(a<.01)continue;const q=4*i;if(debug){dst.data[q]=255;dst.data[q+1]=45;dst.data[q+2]=130;continue;}const lum=.299*src.data[q]+.587*src.data[q+1]+.114*src.data[q+2],k=Math.max(.55,Math.min(p<.9?1:1.45,lum/(meanLum||1)));dst.data[q]=src.data[q]*(1-a)+Math.min(255,r*k)*a;dst.data[q+1]=src.data[q+1]*(1-a)+Math.min(255,g*k)*a;dst.data[q+2]=src.data[q+2]*(1-a)+Math.min(255,b*k)*a;}
+    dst.data.set(src.data);
+    for(let y=Y0;y<Y1;y++)for(let i=y*w+X0;i<y*w+X1;i++){
+      const p=m[i]/255, a=Math.min(1,Math.max(0,(p-lo)/(hi-lo)))*alpha;
+      if(a<.01)continue;
+      const q=4*i, lum=.299*src.data[q]+.587*src.data[q+1]+.114*src.data[q+2], relative=lum/(meanLum||1);
+      const k=Math.max(.55,Math.min(p<.9?1:1.45,1+(relative-1)*coating.shade));
+      // Свет берём с самого фото: белый блик не рисуется на тени или по краю маски.
+      const peak=coating.shine&&p>.9?Math.min(1,Math.max(0,(relative-1.1)*2.1)):0;
+      const glint=coating.shine*peak*peak*Math.max(0,(p-.9)*10);
+      const colorWeight=a*(1-glint), white=255*a*glint;
+      dst.data[q]=src.data[q]*(1-a)+Math.min(255,tr*k)*colorWeight+white;
+      dst.data[q+1]=src.data[q+1]*(1-a)+Math.min(255,tg*k)*colorWeight+white;
+      dst.data[q+2]=src.data[q+2]*(1-a)+Math.min(255,tb*k)*colorWeight+white;
+    }
     out.putImageData(dst,0,0);
   }
   function resultDataUrl(){compare(false);return ui.canvas.toDataURL('image/jpeg',.92);}
 
   ui.color.addEventListener('input',()=>selectedColor(ui.color.value));
   ui.opacity.addEventListener('input',()=>{ui.opacityValue.textContent=ui.opacity.value+'%';render();});
+  finishButtons.forEach(button=>button.addEventListener('click',()=>{
+    finish=button.dataset.finish;
+    finishButtons.forEach(b=>b.setAttribute('aria-pressed',String(b===button)));
+    compare(false);
+  }));
   ui.compare.addEventListener('click',()=>compare(true));
   $('afterBtn').addEventListener('click',()=>compare(false));
   $('eraseBtn').addEventListener('click',()=>{ eraseMode=!eraseMode; $('eraseBtn').setAttribute('aria-pressed',String(eraseMode)); if(eraseMode) compare(false); });

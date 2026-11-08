@@ -19,6 +19,7 @@
     <img class="start-photo" src="../assets/works/1-1.jpg" id="startPhoto" alt="Маникюр">
     <h2>Твой следующий оттенок</h2>
     <p>Фото остаётся на устройстве.</p>
+    <p id="incomingShade" class="linked-shade hidden"><span aria-hidden="true"></span>Цвет из ссылки <b></b></p>
     <div class="pick-row">
       <label class="primary pick">Сделать фото<input id="cameraInput" type="file" accept="image/*" capture="environment"></label>
       <label class="secondary pick">Выбрать из галереи<input id="galleryInput" type="file" accept="image/*"></label>
@@ -45,10 +46,21 @@
       <div id="palette" class="palette" aria-label="Готовые цвета"></div>
       <label class="color-custom">Свой цвет <input id="colorInput" type="color" value="#d81b60"></label>
       <label class="range-row"><span>Интенсивность</span><output id="opacityValue">72%</output><input id="opacity" type="range" min="0" max="100" value="72"></label>
+      <div id="finishPicker" class="finish-picker" role="group" aria-label="Финиш покрытия">
+        <button type="button" data-finish="glossy" aria-pressed="true">Глянцевый</button>
+        <button type="button" data-finish="matte" aria-pressed="false">Матовый</button>
+        <button type="button" data-finish="jelly" aria-pressed="false">Желе</button>
+        <button type="button" data-finish="sheer" aria-pressed="false">Полупрозрачный</button>
+      </div>
       <div class="action-row">
         <button id="saveBtn" class="primary" type="button"><i data-lucide="download"></i>Сохранить</button>
         <button id="shareBtn" class="secondary" type="button"><i data-lucide="share-2"></i>Отправить</button>
       </div>
+      <button id="shareShadeBtn" class="shade-share" type="button">Поделиться оттенком</button>
+      <p id="shadeLinkStatus" class="shade-link-status" role="status"></p>
+      <label id="shadeLinkFallback" class="shade-link-fallback hidden">Скопируйте ссылку
+        <input id="shadeLinkValue" type="url" readonly>
+      </label>
       <p id="editorStatus" class="status" role="status"></p>
     </section>
   </section>
@@ -68,5 +80,6 @@
 <script src="../palettes.js"></script>
 <script src="../brands.js"></script>
 <script src="tryon.js"></script>
+<script src="../tryon-link.js"></script>
 </body>
 </html>

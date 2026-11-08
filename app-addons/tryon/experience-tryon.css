@@ -39,6 +39,10 @@ main { flex:1; min-height:0; width:min(920px,100%); padding:8px 12px; overflow:a
 .color-custom { grid-column:2; grid-row:3; gap:8px; font-size:12px; }
 .range-row { grid-column:1; grid-row:3; gap:0; align-items:center; font-size:12px; }
 .range-row input { margin:2px 0; }
+.finish-picker { grid-column:1 / -1; display:flex; flex-wrap:wrap; gap:5px; min-width:0; }
+.finish-picker button { flex:1 0 auto; min-height:36px; padding:4px 7px; border:1px solid var(--border); background:var(--surface); color:var(--paper); font-size:12px; white-space:nowrap; }
+.finish-picker button[aria-pressed="true"] { border-color:var(--pink); background:var(--pink); color:#fff; }
+.finish-picker button:disabled { opacity:.55; cursor:default; }
 .action-row { grid-column:1 / -1; grid-template-columns:1fr 1fr; }
 .action-row button { min-height:44px; padding:8px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:7px; }
 .action-row button svg { flex:0 0 18px; width:18px; }
@@ -55,3 +59,10 @@ main { flex:1; min-height:0; width:min(920px,100%); padding:8px 12px; overflow:a
 /* При крупном системном шрифте настройки прокручиваются, а фото не сжимается в миниатюру. */
 @media(max-width:719px) { .photo-card { min-height:clamp(260px,46dvh,440px); } }
 @media(max-width:360px) { .topbar h1 { font-size:16px; } .topbar { gap:4px; } .small-btn { padding-inline:5px; } #eraseBtn span { font-size:11px; } }
+.start-card>.linked-shade { display:flex; align-items:center; justify-content:center; gap:7px; margin:0 auto 14px; }
+.linked-shade span { width:18px; height:18px; border:1px solid var(--border); border-radius:50%; }
+.linked-shade b { color:var(--paper); font-weight:600; }
+.shade-share { grid-column:1 / -1; min-height:40px; padding:6px 8px; background:transparent; color:var(--paper); text-decoration:underline; text-underline-offset:3px; }
+.shade-link-status,.shade-link-fallback { grid-column:1 / -1; margin:0; font-size:13px; color:var(--muted); }
+.shade-link-status:empty { display:none; }
+.shade-link-fallback input { display:block; width:100%; margin-top:4px; padding:8px; color:var(--paper); background:var(--surface); border:1px solid var(--border); }
