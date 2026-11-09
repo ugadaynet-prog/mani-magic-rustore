@@ -828,27 +828,20 @@
   }
 
   if(ui.save) ui.save.addEventListener('click', async ()=>{
-    let dataUrl;
-    try { dataUrl = resultDataUrl(); }
-    catch(e){ toast('Не удалось сохранить'); console.error(e); return; }
-    // Сначала галерея: в приложении для этого давно есть плагин TryOnMedia,
-    // он кладёт снимок через MediaStore в альбом «MANI Magic», то есть туда,
-    // где человек его и ищет — в «Фото». В браузере плагина нет, и остаётся
-    // обычная ссылка на скачивание.
-    const media = Cap && Cap.TryOnMedia;
-    if(media){
-      try {
-        await media.saveImage({ data: dataUrl, name: 'MANI-Magic-' + Date.now() + '.jpg' });
-        toast('Сохранено в галерею, альбом «MANI Magic»');
-        return;
-      } catch(e){ console.warn('галерея недоступна, сохраняю файлом:', e); }
-    }
+    if(!sourceImage || !probabilities) return;
+    const color = ui.color.value, coating = finish;
+    ui.save.disabled = true;
     try {
-      const link = document.createElement('a');
-      link.href = dataUrl; link.download = 'mani-magic-tryon.jpg';
-      link.click();
-      toast('Сохранено в загрузки');
-    } catch(e){ toast('Не удалось сохранить'); console.error(e); }
+      compare(false);
+      const photo = await new Promise(resolve => ui.canvas.toBlob(resolve, 'image/jpeg', .9));
+      if (!photo) throw Error('empty_tryon');
+      await window.ManiTryonFavorites.save(photo, color, coating);
+      toast('Примерка добавлена в избранное');
+    } catch {
+      toast('Не удалось сохранить примерку');
+    } finally {
+      ui.save.disabled = false;
+    }
   });
 
   if(ui.share) ui.share.addEventListener('click', async ()=>{

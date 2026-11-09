@@ -53,14 +53,11 @@
         <button type="button" data-finish="sheer" aria-pressed="false">Полупрозрачный</button>
       </div>
       <div class="action-row">
-        <button id="saveBtn" class="primary" type="button"><i data-lucide="download"></i>Сохранить</button>
+        <button id="saveBtn" class="primary" type="button"><i data-lucide="heart"></i>В избранное</button>
         <button id="shareBtn" class="secondary" type="button"><i data-lucide="share-2"></i>Отправить</button>
       </div>
-      <button id="shareShadeBtn" class="shade-share" type="button">Поделиться оттенком</button>
+      <button id="showMasterBtn" class="secondary" style="grid-column:1 / -1" type="button">Показать мастеру</button>
       <p id="shadeLinkStatus" class="shade-link-status" role="status"></p>
-      <label id="shadeLinkFallback" class="shade-link-fallback hidden">Скопируйте ссылку
-        <input id="shadeLinkValue" type="url" readonly>
-      </label>
       <p id="editorStatus" class="status" role="status"></p>
     </section>
   </section>
@@ -79,6 +76,7 @@
 <script src="nail-seg-plugin.js"></script>
 <script src="../palettes.js"></script>
 <script src="../brands.js"></script>
+<script src="../tryon-favorites.js"></script>
 <script src="tryon.js"></script>
 <script src="../tryon-link.js"></script>
 </body>
